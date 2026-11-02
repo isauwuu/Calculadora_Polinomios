@@ -7,8 +7,8 @@ def parsear_numero(texto: str) -> Fraction:
     """Convierte un texto ('3/2', '-5', '1.5') a una fracción exacta."""
     try:
         return Fraction(texto.strip())
-    except ValueError:
-        raise EntradaInvalida(f"'{texto}' no es un número válido. Se aceptan enteros, decimales y fracciones como 3/2.")
+    except (ValueError,ZeroDivisionError):
+        raise EntradaInvalida(f"'{texto}' no es un número válido. Se aceptan enteros, decimales (.) y fracciones como 3/2.")
 
 
 def parsear_coeficientes(texto: str) -> list[Fraction]:
