@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from fractions import Fraction
 from core.errores import PolinomioInvalido
-from core.numeros import parsear_coeficientes, parsear_numero
+from core.numeros import parsear_coeficientes, parsear_numero, parsear_expresion
 
 
 @dataclass
@@ -45,6 +45,12 @@ class Polinomio:
 
         # Invertir para que quede de menor a mayor grado internamente
         coeficientes.reverse()
+        return cls(coeficientes)
+
+    @classmethod
+    def desde_expresion(cls, texto: str):
+        """Crea el polinomio parseando una expresión algebraica (ej: 'x^2 + 3x + 5')."""
+        coeficientes = parsear_expresion(texto)
         return cls(coeficientes)
 
     def derivada(self):
