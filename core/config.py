@@ -1,6 +1,6 @@
 from core.errores import ToleranciaInvalida
 # valor default
-MAX_ITER = 40 #preguntar a nocera cuantas dice
+MAX_ITER = 60 #preguntar a nocera cuantas dice
 EPS_DEFAULT = 1e-6 #de esta manera py representa la notacion cientifica, es equivalente a 1*10^-6
 
 def epsilon_por_cifras(t: int) -> float:
