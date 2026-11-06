@@ -40,3 +40,43 @@ def horner_float(p: Polinomio,alpha: float) -> Resultado:
     paso = {"alpha": alpha, "a": list(a), "b": b}
     return Resultado(valor=b[0], pasos=[paso])
 
+def horner_doble(p: Polinomio,alpha) -> Resultado:
+    """Dos pasadas de Horner:
+      b = Horner sobre P -> b[0] = P(alpha),  b[1:] = cociente Q
+      c = Horner sobre Q (= b[1:])  -> c[0] = P'(alpha), c[1:] = cociente de Q
+    Las dos filas tienen el mismo formato: [0] es el resto y [1:] el cociente.
+    """
+    alpha = Fraction(alpha)
+    primera = horner_fraction(p, alpha)
+    b = primera.pasos[0]["b"] #obtiene el polinomio resultante de la primera pasada con horner
+    if p.grado == 0:
+        return Resultado(valor=(b[0], Fraction(0)), pasos=primera.pasos)
+    segunda = horner_fraction(Polinomio(b[1:]), alpha) #b[1:] le quita el primer elemento, o sea el resto
+    paso = {"alpha": alpha, "a": list(p.coef), "b": b, "c": segunda.pasos[0]["b"]}
+    return Resultado(valor=(b[0], segunda.valor), pasos=[paso])
+
+def horner2_float(coef: list[float], x: float) -> tuple[float, float]:
+    """Para Newton.
+    newton llama al metodo ya con la lista convertida a floats, porq sino iteraria n veces y convertiria los coeficiente n veces tmb D:
+    coef va de menor a mayor grado (usar p.a_float() una sola vez, afuera del bucle).
+    """
+    n = len(coef) - 1
+    p = coef[n]
+    dp = 0.0
+    for i in range(n - 1, -1, -1):
+        dp = dp * x + p
+        p = p * x + coef[i]
+    return p, dp
+
+
+#para halley
+def horner3_float(coef: list[float], x: float) -> tuple[float, float, float]:
+    n = len(coef) - 1
+    p = coef[n]
+    dp = 0.0
+    d2p = 0.0
+    for i in range(n - 1, -1, -1):
+        d2p = d2p * x + dp
+        dp = dp * x + p
+        p = p * x + coef[i]
+    return p, dp, 2.0 * d2p
