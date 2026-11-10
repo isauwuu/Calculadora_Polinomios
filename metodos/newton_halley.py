@@ -4,6 +4,7 @@ from core.config import EPS_DEFAULT, MAX_ITER, convergio
 from core.errores import DivisionPorCero, EntradaInvalida, ToleranciaInvalida
 from core.polinomio import Polinomio
 from core.resultado import Resultado
+from metodos.diagnostico import analizar
 from metodos.evaluacion import horner_doble_float, horner3_float
 
 
@@ -35,7 +36,7 @@ def _validar_x0(x0) -> float:
     return x
 
 
-def _resultado_no_converge(x: float, pasos: list[dict], max_iter: int) -> Resultado:
+def _resultado_no_converge(x: float, pasos: list[dict], max_iter: int, eps: float) -> Resultado:
     error = abs(pasos[-1]["dx"]) if pasos else None
     return Resultado(
         valor=x,
@@ -43,6 +44,7 @@ def _resultado_no_converge(x: float, pasos: list[dict], max_iter: int) -> Result
         error=error,
         convergio=False,
         pasos=pasos,
+        diagnostico=analizar(pasos, eps),
         avisos=[
             f"No se alcanzó la tolerancia en {max_iter} iteraciones. "
             "Probá otro x0 o revisá si hay ciclo o raíz múltiple."
@@ -97,10 +99,11 @@ def newton(p: Polinomio, x0, eps=EPS_DEFAULT, max_iter=MAX_ITER) -> Resultado:
                 error=abs(dx),
                 convergio=True,
                 pasos=pasos,
+                diagnostico=analizar(pasos, eps),
             )
         x = x_sig
 
-    return _resultado_no_converge(x, pasos, max_iter)
+    return _resultado_no_converge(x, pasos, max_iter, eps)
 
 
 def halley(p: Polinomio, x0, eps=EPS_DEFAULT, max_iter=MAX_ITER) -> Resultado:
@@ -167,7 +170,8 @@ def halley(p: Polinomio, x0, eps=EPS_DEFAULT, max_iter=MAX_ITER) -> Resultado:
                 error=abs(dx),
                 convergio=True,
                 pasos=pasos,
+                diagnostico=analizar(pasos, eps),
             )
         x = x_sig
 
-    return _resultado_no_converge(x, pasos, max_iter)
+    return _resultado_no_converge(x, pasos, max_iter, eps)

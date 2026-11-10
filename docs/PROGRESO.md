@@ -47,6 +47,7 @@ Documentación leída de `pdf/` (el AGENTS.md habla de `docs/apunte.pdf` y
 | Raíces enteras y racionales | completo | `tests/test_raices.py` (10 tests) |
 | Newton-Raphson-Horner | completo | `tests/test_newton_halley.py` |
 | Halley | completo | `tests/test_newton_halley.py` |
+| Diagnóstico de iterativos | completo | `tests/test_diagnostico.py` |
 
 - `core/config.py`: se agregó `convergio(dx, x, eps)` con el criterio mixto
   `|dx| <= eps * max(1, |x|)` y se usa en Newton, Halley y Bairstow.
