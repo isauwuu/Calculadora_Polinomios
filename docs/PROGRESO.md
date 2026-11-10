@@ -45,3 +45,12 @@ Documentación leída de `pdf/` (el AGENTS.md habla de `docs/apunte.pdf` y
 | Método | Estado | Tests |
 |---|---|---|
 | Raíces enteras y racionales | completo | `tests/test_raices.py` (10 tests) |
+| Newton-Raphson-Horner | completo | `tests/test_newton_halley.py` |
+| Halley | completo | `tests/test_newton_halley.py` |
+
+- `core/config.py`: se agregó `convergio(dx, x, eps)` con el criterio mixto
+  `|dx| <= eps * max(1, |x|)` y se usa en Newton, Halley y Bairstow.
+- Newton: pasos `n, x, p, dp, x_sig, dx`; el ejemplo del apunte da
+  `2.49086366` en 4 iteraciones con `eps = 1e-3`.
+- Halley: pasos `n, x, p, dp, d2p, x_sig, dx` con `d2p = P''` completa.
+  En el mismo ejemplo converge en menos iteraciones que Newton.

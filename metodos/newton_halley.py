@@ -1,29 +1,41 @@
 import math
 
-from core.config import (
-    EPS_DEFAULT, MAX_ITER_DEFAULT,
-    validar_epsilon, validar_max_iter, convergio,
-)
-from core.errores import DivisionPorCero, EntradaInvalida
+from core.config import EPS_DEFAULT, MAX_ITER, convergio
+from core.errores import DivisionPorCero, EntradaInvalida, ToleranciaInvalida
 from core.polinomio import Polinomio
 from core.resultado import Resultado
-from metodos.diagnostico import analizar
 from metodos.evaluacion import horner_doble_float, horner3_float
 
 
+def _validar_parametros(eps, max_iter) -> tuple[float, int]:
+    """Convierte y valida epsilon y el máximo de iteraciones."""
+    try:
+        eps = float(eps)
+    except (TypeError, ValueError):
+        raise ToleranciaInvalida("La tolerancia epsilon debe ser un número positivo.")
+    if not math.isfinite(eps) or eps <= 0:
+        raise ToleranciaInvalida("La tolerancia epsilon debe ser un número positivo y finito.")
+
+    try:
+        max_iter = int(max_iter)
+    except (TypeError, ValueError):
+        raise EntradaInvalida("El máximo de iteraciones debe ser un entero positivo.")
+    if max_iter <= 0:
+        raise EntradaInvalida("El máximo de iteraciones debe ser un entero positivo.")
+    return eps, max_iter
+
+
 def _validar_x0(x0) -> float:
-    """Convierte x0 a float finito; lanza EntradaInvalida si no lo es."""
     try:
         x = float(x0)
     except (TypeError, ValueError):
         raise EntradaInvalida("El punto inicial x0 debe ser un número.")
     if not math.isfinite(x):
-        raise EntradaInvalida("El punto inicial x0 debe ser un número finito.")
+        raise DivisionPorCero("El punto inicial x0 no es un valor finito.")
     return x
 
 
-def _resultado_no_converge(x: float, pasos: list[dict], max_iter: int, eps: float) -> Resultado:
-    """Arma el Resultado cuando se agotan las iteraciones (v2: no lanza)."""
+def _resultado_no_converge(x: float, pasos: list[dict], max_iter: int) -> Resultado:
     error = abs(pasos[-1]["dx"]) if pasos else None
     return Resultado(
         valor=x,
@@ -31,7 +43,6 @@ def _resultado_no_converge(x: float, pasos: list[dict], max_iter: int, eps: floa
         error=error,
         convergio=False,
         pasos=pasos,
-        diagnostico=analizar(pasos, eps),
         avisos=[
             f"No se alcanzó la tolerancia en {max_iter} iteraciones. "
             "Probá otro x0 o revisá si hay ciclo o raíz múltiple."
@@ -39,25 +50,17 @@ def _resultado_no_converge(x: float, pasos: list[dict], max_iter: int, eps: floa
     )
 
 
-def newton(p: Polinomio, x0, eps=EPS_DEFAULT, max_iter=MAX_ITER_DEFAULT) -> Resultado:
+def newton(p: Polinomio, x0, eps=EPS_DEFAULT, max_iter=MAX_ITER) -> Resultado:
     """Método de Newton-Raphson para polinomios (Algoritmo 7 del apunte).
 
     Usa Horner doble: P(xn) y P'(xn) en una sola pasada. La iteración es
         xn+1 = xn - P(xn) / P'(xn)
-    y se detiene con el criterio mixto |dx| <= eps * max(1, |x|).
+    y se detiene con el criterio mixto |dx| <= eps * max(1, |xn|).
 
-    Parámetros:
-        p:        Polinomio (coef[i] = coef de x^i, menor→mayor)
-        x0:       punto inicial
-        eps:      tolerancia (validada por validar_epsilon)
-        max_iter: máximo de iteraciones (validado por validar_max_iter)
-
-    Devuelve Resultado. Si no converge en max_iter, devuelve convergio=False
-    con los pasos acumulados. Si P'(x)=0 o aparece inf/NaN, lanza
-    DivisionPorCero con .pasos adjuntos.
+    Cada paso guarda n, x, p, dp, x_sig y dx. dx es el paso que sale de esa
+    fila; x_sig es el x de la fila siguiente (o el valor final).
     """
-    eps = validar_epsilon(eps)
-    max_iter = validar_max_iter(max_iter)
+    eps, max_iter = _validar_parametros(eps, max_iter)
     x = _validar_x0(x0)
     coef = p.a_float()  # una sola conversión a float, fuera del bucle
     pasos: list[dict] = []
@@ -94,26 +97,23 @@ def newton(p: Polinomio, x0, eps=EPS_DEFAULT, max_iter=MAX_ITER_DEFAULT) -> Resu
                 error=abs(dx),
                 convergio=True,
                 pasos=pasos,
-                diagnostico=analizar(pasos, eps),
             )
         x = x_sig
 
-    return _resultado_no_converge(x, pasos, max_iter, eps)
+    return _resultado_no_converge(x, pasos, max_iter)
 
 
-def halley(p: Polinomio, x0, eps=EPS_DEFAULT, max_iter=MAX_ITER_DEFAULT) -> Resultado:
+def halley(p: Polinomio, x0, eps=EPS_DEFAULT, max_iter=MAX_ITER) -> Resultado:
     """Método de Halley para polinomios (Algoritmo 8 del apunte).
 
     Usa Horner triple: P(xn), P'(xn) y P''(xn). La fórmula es
         xn+1 = xn - 2 P P' / (2 (P')^2 - P P'')
-    con P'' completa (no P''/2; ver Anexo B del diseño).
+    con P'' completa (no P''/2). Se guarda d2p = P''(xn) en cada paso.
 
-    Mismo manejo de fallas que newton(): agotar iteraciones devuelve
-    convergio=False; P'=0, denominador=0 o inf/NaN lanzan DivisionPorCero
-    con .pasos adjuntos.
+    Igual que Newton, agotar las iteraciones devuelve convergio=False con los
+    pasos; una derivada nula o un valor no finito lanza DivisionPorCero.
     """
-    eps = validar_epsilon(eps)
-    max_iter = validar_max_iter(max_iter)
+    eps, max_iter = _validar_parametros(eps, max_iter)
     x = _validar_x0(x0)
     coef = p.a_float()
     pasos: list[dict] = []
@@ -148,10 +148,17 @@ def halley(p: Polinomio, x0, eps=EPS_DEFAULT, max_iter=MAX_ITER_DEFAULT) -> Resu
                 pasos=pasos,
             )
 
-        pasos.append({
-            "n": n, "x": x, "p": px, "dp": dpx, "d2p": d2px,
-            "x_sig": x_sig, "dx": dx,
-        })
+        pasos.append(
+            {
+                "n": n,
+                "x": x,
+                "p": px,
+                "dp": dpx,
+                "d2p": d2px,
+                "x_sig": x_sig,
+                "dx": dx,
+            }
+        )
 
         if convergio(dx, x, eps):
             return Resultado(
@@ -160,8 +167,7 @@ def halley(p: Polinomio, x0, eps=EPS_DEFAULT, max_iter=MAX_ITER_DEFAULT) -> Resu
                 error=abs(dx),
                 convergio=True,
                 pasos=pasos,
-                diagnostico=analizar(pasos, eps),
             )
         x = x_sig
 
-    return _resultado_no_converge(x, pasos, max_iter, eps)
+    return _resultado_no_converge(x, pasos, max_iter)
