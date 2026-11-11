@@ -24,9 +24,21 @@
   Es una cota válida, no necesariamente la más ajustada. Los tests comparan con
   `float` y tolerancia.
 - **Separación de raíces.** Si un extremo del intervalo es raíz, `contar_raices`
-  y `separar_raices` lanzan `EntradaInvalida` con los pasos calculados. Si el
-  punto medio de una subdivisión es raíz, también se avisa: el usuario debe
-  elegir otro intervalo. Es la opción conservadora para no inventar un épsilon.
+  y `separar_raices` lanzan `EntradaInvalida` con los pasos calculados. Si un
+  punto de subdivisión es raíz, no se avisa: se prueba otro punto interior
+  (medios, cuartos, octavos, ...) hasta encontrar uno que no lo sea. Así los
+  extremos de todos los subintervalos quedan siempre fuera del conjunto de
+  raíces. Confirmar si el profe prefiere otro criterio.
+- **Fórmula del conteo de Sturm.** El texto del apunte dice
+  `nº raíces = ncs(b) - ncs(a)`, pero su tabla del caso 1 da `ncs(-2)=4` y
+  `ncs(2)=0`, con lo que la fórmula correcta es `ncs(a) - ncs(b)`. Decisión:
+  usar `ncs(a) - ncs(b)`, que además coincide con el teorema estándar
+  (`V(a) - V(b)`). Confirmar con el profesor.
+- **Escala de la sucesión de Sturm.** Para limpiar fracciones se multiplica cada
+  resto por el mcm de los denominadores (constante positiva), sin dividir por
+  el mcd. Así se reproducen exactamente los coeficientes del apunte
+  (`P2=5x^2-2`, `P3=18x`, `P4=2`). La forma simplificada también se escala con
+  constantes positivas, lo que no cambia ningún signo.
 - **Raíces repetidas en enteras/racionales.** `raices_enteras` y
   `raices_racionales` devuelven raíces distintas (un candidato se informa una
   sola vez), no con multiplicidad.

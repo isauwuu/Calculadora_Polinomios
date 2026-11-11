@@ -1,6 +1,7 @@
 # Progreso del núcleo matemático
 
-Rama de trabajo: `feat/raices` (una rama por método).
+Rama de trabajo: una rama por método (`feat/raices`, `feat/newton-halley`,
+`feat/diagnostico`, `feat/cotas`, `feat/sturm`, `feat/bairstow`).
 
 ## Diagnóstico inicial (2026-11-10)
 
@@ -49,6 +50,7 @@ Documentación leída de `pdf/` (el AGENTS.md habla de `docs/apunte.pdf` y
 | Halley | completo | `tests/test_newton_halley.py` |
 | Diagnóstico de iterativos | completo | `tests/test_diagnostico.py` |
 | Cotas: Lagrange, Laguerre, Newton e implicación | completo | `tests/test_cotas.py` |
+| Sturm: sucesión, conteo y separación | completo | `tests/test_sturm.py` |
 
 - `core/config.py`: se agregó `convergio(dx, x, eps)` con el criterio mixto
   `|dx| <= eps * max(1, |x|)` y se usa en Newton, Halley y Bairstow.
@@ -56,3 +58,11 @@ Documentación leída de `pdf/` (el AGENTS.md habla de `docs/apunte.pdf` y
   `2.49086366` en 4 iteraciones con `eps = 1e-3`.
 - Halley: pasos `n, x, p, dp, d2p, x_sig, dx` con `d2p = P''` completa.
   En el mismo ejemplo converge en menos iteraciones que Newton.
+- Sturm: sucesión `P0=P`, `P1=P'`, `Pk = -resto(P_{k-2}/P_{k-1})`, limpiando
+  denominadores solo con constantes positivas. El caso 1 reproduce
+  `P2=5x^2-2`, `P3=18x`, `P4=2`. Si aparece un resto nulo se detecta el mcd,
+  se informa `P_m = 0` y se rehace con `Q = P/mcd(P,P')`; la forma simplificada
+  reproduce `Q0..Q3` del caso 2. El conteo usa `ncs(a)-ncs(b)` (ver DUDAS) y
+  los extremos que son raíz lanzan `EntradaInvalida` con la tabla de signos.
+  La separación subdivide con aritmética exacta y evita puntos de corte que
+  sean raíz.
