@@ -6,7 +6,6 @@ from metodos.evaluacion import horner_fraction
 
 # Denominador para las cotas racionales cuando la raíz k-ésima no es exacta.
 _DEN_COTA = 1000
-# Tope de iteraciones para Laguerre y Newton; al superarlo, se respalda en Lagrange.
 _MAX_BUSQUEDA = 100000
 
 
@@ -61,20 +60,11 @@ def _polinomio_negativo(p: Polinomio) -> Polinomio:
 
 
 def _polinomio_negativo_inverso(p: Polinomio) -> Polinomio:
-    """P(-1/y) multiplicado por y^n.
-
-    Sustituyendo x = -1/y en P(x) = Σ a_i x^i y multiplicando por y^n:
-        P(-1/y) · y^n = Σ a_i · (-1)^i · y^(n-i)
-    Renombrando j = n - i:
-        = Σ_j a_{n-j} · (-1)^(n-j) · y^j
-
-    El coeficiente de y^j es a_{n-j} · (-1)^(n-j).
-    (Si n es impar, el polinomio entero queda negado respecto de la fórmula
-    sin el (-1)^n; eso es irrelevante para las raíces, pero lo incluimos para
-    que el polinomio devuelto sea exactamente P(-1/y) · y^n.)
-    """
+    """P(-1/y) multiplicado por y^n."""
     n = p.grado
-    return Polinomio([p.coef[n - j] * ((-1) ** (n - j)) for j in range(n + 1)])
+    return Polinomio(
+        [p.coef[n - i] * (-1) ** i for i in range(n + 1)]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -96,16 +86,11 @@ def _sup_lagrange(p: Polinomio) -> tuple[Fraction, dict]:
 
 
 def _sup_laguerre(p: Polinomio) -> tuple[Fraction, dict]:
-    """Menor L entero > 0 tal que el cociente y el resto de (x - L) sean > 0.
-
-    Nota: cuando el resto es 0 y el cociente es positivo (apunte, sección 4.3),
-    este código avanza a L+1 en vez de sumar una constante ≤ 1. La cota
-    resultante sigue siendo válida (más conservadora).
-    """
     p = _normalizar(p)
     if _sin_raices_positivas(p):
         return Fraction(0), {"L": None}
 
+    # Menor L entero > 0 tal que el cociente y el resto de (x - L) sean > 0.
     for L in range(1, _MAX_BUSQUEDA):
         b = horner_fraction(p, L).pasos[0]["b"]  # b[0] resto, b[1:] cociente
         if all(c > 0 for c in b):
@@ -117,7 +102,6 @@ def _sup_laguerre(p: Polinomio) -> tuple[Fraction, dict]:
 
 
 def _sup_newton(p: Polinomio) -> tuple[Fraction, dict]:
-    """Menor alpha > 0 con P, P', ..., P^(n) todas positivas en alpha."""
     p = _normalizar(p)
     if _sin_raices_positivas(p):
         return Fraction(0), {"alpha": None}
@@ -202,9 +186,6 @@ def laguerre(p: Polinomio) -> Resultado:
 
     Se prueba con Horner P(x) = (x - L) C(x) + R y se exige que todos los
     coeficientes de C y el resto R sean positivos.
-
-    Si el resto es 0 y el cociente es positivo, este código avanza a L+1
-    (el apunte permitiría sumar una constante ≤ 1). La cota sigue siendo válida.
     """
     return _cotas_con_metodo(p, _sup_laguerre, "laguerre")
 

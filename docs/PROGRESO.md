@@ -48,6 +48,7 @@ Documentación leída de `pdf/` (el AGENTS.md habla de `docs/apunte.pdf` y
 | Newton-Raphson-Horner | completo | `tests/test_newton_halley.py` |
 | Halley | completo | `tests/test_newton_halley.py` |
 | Diagnóstico de iterativos | completo | `tests/test_diagnostico.py` |
+| Cotas: Lagrange, Laguerre, Newton e implicación | completo | `tests/test_cotas.py` |
 
 - `core/config.py`: se agregó `convergio(dx, x, eps)` con el criterio mixto
   `|dx| <= eps * max(1, |x|)` y se usa en Newton, Halley y Bairstow.
