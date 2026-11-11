@@ -126,6 +126,8 @@ class PestanaBase(tk.Frame):
                 bg=CARD,
                 fg="#6A7B86",
                 anchor="w",
+                justify="left",
+                wraplength=230,
             ).pack(fill="x", pady=(3, 0))
         self._vars_entrada.append(variable)
         if self._primer_entry is None:

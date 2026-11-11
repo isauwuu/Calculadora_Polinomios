@@ -90,3 +90,31 @@ con fracciones, parámetros inválidos y `NoConverge` con `.pasos`.
   (por ejemplo `(x - 1)^4` con `eps <= 1e-8`). La variante mejorada del
   apunte ayuda, pero no elimina la singularidad del Jacobiano en el factor
   múltiple. Ver `docs/DUDAS.md`.
+
+## Interfaz gráfica (2026-11-11)
+
+Ramas: `feat/gui-base`, `feat/gui-newton`, `feat/gui-p1`, ... (sin push ni
+merge a `main`). El núcleo no se modifica.
+
+### Completo
+
+- Base visual: encabezado, barra de seis pestañas, tres tarjetas, tabla
+  genérica, tarjeta de resultado, banner de avisos, barra de estado y DPI
+  awareness en Windows.
+- Controlador sin Tkinter para las seis pestañas; los métodos se importan
+  dentro de cada función.
+- Pestaña 4 (Newton y Halley): tabla con `P''` en Halley, filas rojas del
+  diagnóstico, banner de ciclo/convergencia lineal, tarjeta con la raíz y
+  gráfico con iteraciones. Probada con `x^3 - 5x - 3`, x0 = 2, eps = 1e-3
+  (2.4908637 en 4 iteraciones), Halley, ciclo y derivada nula.
+- Pestaña 1 (Evaluar y dividir): evaluación directa, Horner, Horner doble y
+  división por `x + b`, `ax + b`, `x² + ax + b`, `ax² + bx + c` y polinomio
+  general. Tabla con el esquema exacto (`Fraction`), cociente/resto en la
+  tarjeta y gráfico con α y la raíz del divisor.
+
+### Pendiente
+
+- Pestañas 2, 3, 5 y 6 (siguen con el contenido temporal).
+- Tests de `gui/controlador.py`.
+- Revisión visual final y `docs/DUDAS_GUI.md`.
+

@@ -9,6 +9,7 @@ from gui.estilo import (
     AMBER_B,
     AMBER_L,
     BG,
+    BLUE_L,
     CARD,
     FIELD,
     FIELD_B,
@@ -257,6 +258,9 @@ class Seg(tk.Canvas):
         self._imgs = []
         self.bind("<Configure>", self._al_configurar)
         self.bind("<ButtonRelease-1>", self._click)
+        # Si el programa cambia la variable (por ejemplo al limpiar), el
+        # selector tiene que reflejar el nuevo valor aunque no haya clic.
+        self.var.trace_add("write", lambda *_: self._dibujar())
 
     def _al_configurar(self, evento):
         self._size = (evento.width, evento.height)
@@ -392,6 +396,7 @@ class TablaPasos(tk.Frame):
         self.tree.tag_configure("alerta", background=AMBER_L, foreground=AMBER)
         self.tree.tag_configure("perturbado", background=AMBER_L, foreground=AMBER)
         self.tree.tag_configure("cero", background=AMBER_L, foreground=AMBER)
+        self.tree.tag_configure("resto", background=BLUE_L, foreground=NAVY)
 
     def configurar(self, columnas):
         """columnas: lista de (clave, título, ancho, alineación)."""
