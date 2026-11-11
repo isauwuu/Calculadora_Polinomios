@@ -51,6 +51,7 @@ Documentación leída de `pdf/` (el AGENTS.md habla de `docs/apunte.pdf` y
 | Diagnóstico de iterativos | completo | `tests/test_diagnostico.py` |
 | Cotas: Lagrange, Laguerre, Newton e implicación | completo | `tests/test_cotas.py` |
 | Sturm: sucesión, conteo y separación | completo | `tests/test_sturm.py` |
+| Bairstow: factores cuadráticos y raíces complejas | completo | `tests/test_bairstow.py` (22 tests) |
 
 - `core/config.py`: se agregó `convergio(dx, x, eps)` con el criterio mixto
   `|dx| <= eps * max(1, |x|)` y se usa en Newton, Halley y Bairstow.
@@ -66,3 +67,26 @@ Documentación leída de `pdf/` (el AGENTS.md habla de `docs/apunte.pdf` y
   los extremos que son raíz lanzan `EntradaInvalida` con la tabla de signos.
   La separación subdivide con aritmética exacta y evita puntos de corte que
   sean raíz.
+- Bairstow: factor `x^2 - r*x - s`, doble Horner cuadrático y sistema 2x2 de
+  Newton. Si el determinante es casi nulo perturba `(r, s)`; prueba varios
+  arranques y, si el Horner estándar no converge, la variante mejorada de la
+  pág. 39 del apunte. Extrae las potencias de `x` antes de iterar, deflacta
+  cada factor y resuelve la cuadrática final con `cmath`. El ejemplo
+  `x^4 + 5x^3 + 15x^2 + 5x - 26` da `1, -2, -2 ± 3i` en 5 iteraciones con
+  `eps = 1e-3`; el primer paso coincide con la pág. 35 del apunte. Las raíces
+  reales se limpian con `math.isclose(imag, 0, abs_tol=1e-9)`, nunca con
+  `imag == 0`.
+
+## Resultado de las pruebas
+
+`python -m pytest -q` → **94 tests pasan**. Incluye ejemplos del apunte,
+comparaciones contra `numpy.roots` (solo en tests), raíces en 0, polinomios
+con fracciones, parámetros inválidos y `NoConverge` con `.pasos`.
+
+## Limitaciones conocidas
+
+- Bairstow con raíces múltiples converge linealmente y la precisión de la
+  raíz va como `sqrt(eps)`; con `eps` muy chico puede agotar `MAX_ITER`
+  (por ejemplo `(x - 1)^4` con `eps <= 1e-8`). La variante mejorada del
+  apunte ayuda, pero no elimina la singularidad del Jacobiano en el factor
+  múltiple. Ver `docs/DUDAS.md`.

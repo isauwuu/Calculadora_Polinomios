@@ -47,3 +47,33 @@
 - **Error en código existente.** `Polinomio.__post_init__` recorta ceros
   modificando la lista recibida (no hace copia). No se corrige por indicación
   del AGENTS.md; se deja anotado.
+- **Fórmula de las raíces del factor de Bairstow.** El apunte (pág. 34) escribe
+  `x_1,2 = (-r ± sqrt(r^2 - 4s)) / 2`, pero eso corresponde a `x^2 + r*x + s`.
+  Con el factor que usa todo el método, `x^2 - r*x - s`, la fórmula correcta es
+  `(r ± sqrt(r^2 + 4s)) / 2`. Decisión: usar la fórmula coherente con el
+  factor; el código la implementa en `_raices_factor`. Confirmar con el
+  profesor.
+- **Dos variantes de Horner cuadrático en Bairstow.** El ejemplo principal
+  (pág. 35) usa el Horner estándar, con `b0 = a0 + s*b2`; la mejora de la
+  pág. 39 agrega `r*b1` y cambia los pasos. Decisión: intentar primero la
+  variante estándar (así el ejemplo del apunte reproduce sus valores) y, si
+  ningún arranque converge, probar la variante mejorada. Si el profesor pide
+  una sola, se puede fijar con un parámetro o eliminar la otra.
+- **Raíces en 0 en Bairstow.** Antes de iterar se extraen todas las potencias
+  de `x` (una raíz 0 por cada una) y se trabaja con el polinomio restante. Así
+  se evita arrancar con `s = 0`, donde el sistema de Newton queda degenerado,
+  y se devuelven las raíces 0 con su multiplicidad. Si el polinomio es
+  `x^k`, no se itera: se devuelven las `k` raíces 0.
+- **Raíces múltiples en Bairstow.** Es una limitación numérica conocida del
+  método: en un factor múltiple el Jacobiano se anula y la convergencia pasa
+  a ser lineal, con error en la raíz del orden de `sqrt(eps)`. Con `eps` muy
+  chico puede agotar `MAX_ITER` (por ejemplo `(x - 1)^4` con `eps <= 1e-8`);
+  la variante mejorada ayuda pero no elimina el problema. No se considera un
+  error de implementación. Para raíces múltiples exactas conviene usar las
+  raíces enteras/racionales o Sturm. Confirmar si el profesor espera otro
+  tratamiento.
+- **Pasos de `NoConverge` en Bairstow.** La excepción lleva los pasos del
+  último intento (el último arranque/variante probado), no los de todos los
+  intentos anteriores, para no repetir filas con el mismo `factor` e `iter`.
+  Si la GUI necesita ver todos los intentos, habría que agregar una clave
+  extra o acumularlos con otro criterio.
