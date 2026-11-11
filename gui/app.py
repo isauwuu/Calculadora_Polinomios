@@ -6,6 +6,7 @@ from gui import imagenes
 from gui.estilo import BG, CARD, INK, MUTED, Fuentes, crear_estilos
 from gui.graficos import configurar_fuente
 from gui.pestanas.p1_evaluar_dividir import PestanaEvaluarDividir
+from gui.pestanas.p2_enteras_racionales import PestanaEnterasRacionales
 from gui.pestanas.p4_newton_halley import PestanaNewtonHalley
 from gui.pestanas.placeholder import PestanaPlaceholder
 from gui.widgets import Card, TabBar
@@ -78,6 +79,7 @@ class App(tk.Tk):
             for i, etiqueta in enumerate(ETIQUETAS)
         ]
         self.paginas[0] = PestanaEvaluarDividir(self.cuerpo, self)
+        self.paginas[1] = PestanaEnterasRacionales(self.cuerpo, self)
         self.paginas[3] = PestanaNewtonHalley(self.cuerpo, self)
 
     def _crear_estado(self):

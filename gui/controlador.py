@@ -151,6 +151,47 @@ def _sin_repetidos(textos):
     return resultado
 
 
+def factorizar_raices(texto, raices):
+    """Divide P por (x - r) tantas veces como aparezca cada raíz exacta.
+
+    Devuelve ``{"factores": [Fraction], "residual": Polinomio}`` donde
+    ``factores`` repite cada raíz según su multiplicidad y ``residual`` es lo
+    que queda cuando ya no se puede dividir exactamente. La GUI solo arma el
+    texto de la factorización; la cuenta la hace esta capa.
+    """
+    p = leer_polinomio(texto)
+    dividir_lineal = _metodo("metodos.division", "dividir_por_x_mas_b")
+    factores = []
+    q = p
+    for raiz in raices:
+        r = Fraction(raiz)
+        while q.grado >= 1:
+            cociente, resto = dividir_lineal(q, -r).valor
+            if resto != 0:
+                break
+            factores.append(r)
+            q = cociente
+    return {"factores": factores, "residual": q}
+
+
+def _valores_en_p(p, pasos):
+    """Reemplaza el valor de cada paso por ``P(candidato)``.
+
+    El núcleo evalúa el polinomio sin los factores ``x`` (``Q``) para buscar
+    las raíces distintas de 0. Para la tabla conviene mostrar el valor real en
+    el polinomio original, sobre todo cuando ``P`` tiene una raíz en 0.
+    """
+    horner = _metodo("metodos.evaluacion", "horner_fraction")
+    resultado = []
+    for paso in pasos:
+        copia = dict(paso)
+        valor = horner(p, Fraction(copia["candidato"])).valor
+        copia["valor"] = valor
+        copia["es_raiz"] = valor == 0
+        resultado.append(copia)
+    return resultado
+
+
 def raices(texto, modo="Ambas"):
     """Raíces enteras, racionales o ambas, exactas."""
     p = leer_polinomio(texto)
@@ -159,9 +200,13 @@ def raices(texto, modo="Ambas"):
     f_racionales = _metodo("metodos.raices", "raices_racionales")
 
     if clave.startswith("enter"):
-        return f_enteras(p)
+        resultado = f_enteras(p)
+        resultado.pasos = _valores_en_p(p, resultado.pasos)
+        return resultado
     if clave.startswith("rac"):
-        return f_racionales(p)
+        resultado = f_racionales(p)
+        resultado.pasos = _valores_en_p(p, resultado.pasos)
+        return resultado
     if not clave.startswith("amb"):
         raise EntradaInvalida("Elegí un modo de búsqueda válido.")
 
@@ -181,7 +226,7 @@ def raices(texto, modo="Ambas"):
         else:
             por_candidato[candidato] = {**paso, "tipo": "racional"}
 
-    pasos = [por_candidato[c] for c in sorted(por_candidato)]
+    pasos = _valores_en_p(p, [por_candidato[c] for c in sorted(por_candidato)])
     valor = sorted(set(resultado_enteras.valor) | set(resultado_racionales.valor))
     avisos = _sin_repetidos(resultado_enteras.avisos + resultado_racionales.avisos)
     return Resultado(
@@ -358,6 +403,7 @@ __all__ = [
     "cotas",
     "dividir",
     "evaluar",
+    "factorizar_raices",
     "leer_polinomio",
     "newton_halley",
     "parsear_entero_positivo",

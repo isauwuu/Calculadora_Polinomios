@@ -111,10 +111,26 @@ merge a `main`). El núcleo no se modifica.
   división por `x + b`, `ax + b`, `x² + ax + b`, `ax² + bx + c` y polinomio
   general. Tabla con el esquema exacto (`Fraction`), cociente/resto en la
   tarjeta y gráfico con α y la raíz del divisor.
+- Pestaña 2 (Enteras y racionales): modo Enteras/Racionales/Ambas, tabla de
+  candidatos con `P(candidato)` exacto, fila verde para las raíces, tarjeta
+  con las raíces y la factorización con multiplicidad, y gráfico con las
+  raíces marcadas. `gui/controlador.py` deduplica los candidatos en modo
+  Ambas y recalcula el valor sobre el polinomio original cuando hay raíz 0.
+  Probada con `3x^4 - 11x^3 - 6x^2 + 44x - 24` (enteras y racionales), `x^3 - x`,
+  `x^2 + 1`, `2x^3`, polinomios con fracciones y entradas inválidas.
 
 ### Pendiente
 
-- Pestañas 2, 3, 5 y 6 (siguen con el contenido temporal).
-- Tests de `gui/controlador.py`.
+- Pestañas 3, 5 y 6 (siguen con el contenido temporal).
+- Tests de `gui/controlador.py` para las pestañas 3, 5 y 6.
 - Revisión visual final y `docs/DUDAS_GUI.md`.
+
+### Pruebas de la interfaz
+
+- `tests/test_controlador.py`: 9 tests de la pestaña 2 (modos, deduplicación,
+  valores exactos en el polinomio original, multiplicidad y entradas
+  inválidas). Total del proyecto: **103 tests** (`python -m pytest -q`).
+- Prueba funcional con Tkinter: se construyó `App`, se seleccionó la pestaña 2,
+  se ejecutaron los ejemplos y se verificaron filas, tarjeta, estado y cambio
+  de modo sin errores.
 
