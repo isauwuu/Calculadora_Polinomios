@@ -5,6 +5,7 @@ import tkinter as tk
 from gui import imagenes
 from gui.estilo import BG, CARD, INK, MUTED, Fuentes, crear_estilos
 from gui.graficos import configurar_fuente
+from gui.pestanas.p4_newton_halley import PestanaNewtonHalley
 from gui.pestanas.placeholder import PestanaPlaceholder
 from gui.widgets import Card, TabBar
 
@@ -75,6 +76,7 @@ class App(tk.Tk):
             PestanaPlaceholder(self.cuerpo, self, i + 1, etiqueta)
             for i, etiqueta in enumerate(ETIQUETAS)
         ]
+        self.paginas[3] = PestanaNewtonHalley(self.cuerpo, self)
 
     def _crear_estado(self):
         self.status = Card(self, r=12, fill=CARD, outer=BG, shadow=False, pad=11)

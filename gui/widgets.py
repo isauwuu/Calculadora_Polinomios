@@ -400,7 +400,7 @@ class TablaPasos(tk.Frame):
         claves = [c[0] for c in self._columnas]
         self.tree["columns"] = claves
         for clave, titulo, ancho, alineacion in self._columnas:
-            self.tree.heading(clave, text=titulo, anchor=alineacion)
+            self.tree.heading(clave, text=titulo, anchor="center")
             self.tree.column(clave, width=ancho, minwidth=max(40, ancho // 2), anchor=alineacion, stretch=True)
 
     def cargar(self, filas, tags=None):

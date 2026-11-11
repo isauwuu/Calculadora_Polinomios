@@ -208,7 +208,7 @@ class PestanaBase(tk.Frame):
     def calcular(self, evento=None):
         """Único punto que atrapa errores de entrada, cálculo e internos."""
         self.tabla.limpiar()
-        self._ocultar_resultado()
+        self._ocultar_tarjeta()
         self._ocultar_banner()
         try:
             resultado = self._calcular()
@@ -220,7 +220,7 @@ class PestanaBase(tk.Frame):
             return
         except Exception:
             traceback.print_exc()
-            self._ocultar_resultado()
+            self._ocultar_tarjeta()
             self.tabla.limpiar()
             self._limpiar_grafico("Ocurrió un error interno.")
             self._estado("error", "Error interno. Revisá la consola.")
@@ -237,7 +237,7 @@ class PestanaBase(tk.Frame):
     def _manejar_error(self, exc, tono):
         if getattr(exc, "pasos", None):
             self._mostrar_pasos_error(exc.pasos)
-        self._ocultar_resultado()
+        self._ocultar_tarjeta()
         self._limpiar_grafico("No hay gráfico para esta entrada.")
         mensaje = str(exc)
         if getattr(exc, "pasos", None):
@@ -331,7 +331,7 @@ class PestanaBase(tk.Frame):
         for variable in self._vars_entrada:
             variable.set("")
         self.tabla.limpiar()
-        self._ocultar_resultado()
+        self._ocultar_tarjeta()
         self._ocultar_banner()
         self._limpiar_grafico("Ingresá los datos y presioná Calcular.")
         self._estado("ok", "Listo. Ingresá los datos y presioná Calcular.")
