@@ -9,6 +9,7 @@ from gui.pestanas.p1_evaluar_dividir import PestanaEvaluarDividir
 from gui.pestanas.p2_enteras_racionales import PestanaEnterasRacionales
 from gui.pestanas.p3_cotas import PestanaCotas
 from gui.pestanas.p4_newton_halley import PestanaNewtonHalley
+from gui.pestanas.p5_sturm import PestanaSturm
 from gui.pestanas.placeholder import PestanaPlaceholder
 from gui.widgets import Card, TabBar
 
@@ -83,6 +84,7 @@ class App(tk.Tk):
         self.paginas[1] = PestanaEnterasRacionales(self.cuerpo, self)
         self.paginas[2] = PestanaCotas(self.cuerpo, self)
         self.paginas[3] = PestanaNewtonHalley(self.cuerpo, self)
+        self.paginas[4] = PestanaSturm(self.cuerpo, self)
 
     def _crear_estado(self):
         self.status = Card(self, r=12, fill=CARD, outer=BG, shadow=False, pad=11)
