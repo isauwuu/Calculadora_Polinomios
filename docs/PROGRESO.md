@@ -129,10 +129,15 @@ merge a `main`). El núcleo no se modifica.
   aviso. Gráfico con el intervalo sombreado y las raíces aisladas. Probada
   con `4x^4 - 5x^2 + 1`, el ejemplo con raíz triple, `x^2 + 1`, constantes y
   extremos inválidos.
+- Pestaña 6 (Bairstow): tabla de factores con `r`, `s`, `dr`, `ds`, filas
+  ámbar para perturbaciones y raíces del factor; tarjeta con todas las raíces
+  reales y complejas; gráfico doble con `P(x)` y el plano complejo. Si no
+  converge, se muestran los pasos del último intento. Probada con
+  `x^4 + 5x^3 + 15x^2 + 5x - 26` (1, −2, −2 ± 3i), `x^4 - 1`, `x^2 + 1`,
+  raíz en 0, constante y `NoConverge`.
 
 ### Pendiente
 
-- Pestaña 6 (sigue con el contenido temporal).
 - Revisión visual final y `docs/DUDAS_GUI.md`.
 
 ### Pruebas de la interfaz
@@ -140,7 +145,7 @@ merge a `main`). El núcleo no se modifica.
 - `tests/test_controlador.py`: tests de las pestañas 2, 3, 5 y 6 (modos,
   deduplicación, valores exactos, multiplicidad, cotas, Sturm, Bairstow y
   entradas inválidas). Total del proyecto: **111 tests** (`python -m pytest -q`).
-- Prueba funcional con Tkinter: se construyó `App`, se seleccionaron las
-  pestañas 2, 3 y 5, se ejecutaron los ejemplos y se verificaron filas,
-  tarjeta, estado, banner y gráfico sin errores.
+- Prueba funcional con Tkinter: se construyó `App`, se recorrieron las seis
+  pestañas, se ejecutaron los ejemplos y se verificaron filas, tarjeta,
+  estado, banner y gráfico sin errores. Ya no quedan pestañas temporales.
 
