@@ -118,19 +118,23 @@ merge a `main`). El núcleo no se modifica.
   Ambas y recalcula el valor sobre el polinomio original cuando hay raíz 0.
   Probada con `3x^4 - 11x^3 - 6x^2 + 44x - 24` (enteras y racionales), `x^3 - x`,
   `x^2 + 1`, `2x^3`, polinomios con fracciones y entradas inválidas.
+- Pestaña 3 (Cotas): tabla comparativa de Lagrange, Laguerre, Newton e
+  implicación con las cuatro cotas exactas; tarjeta con la intersección más
+  ajustada y gráfico con las bandas de raíces positivas y negativas.
+  Probada con `3x^4 - 11x^3 - 6x^2 + 44x - 24`, `x^2 + 1`, `x^3`, constante
+  y entradas inválidas.
 
 ### Pendiente
 
-- Pestañas 3, 5 y 6 (siguen con el contenido temporal).
-- Tests de `gui/controlador.py` para las pestañas 3, 5 y 6.
+- Pestañas 5 y 6 (siguen con el contenido temporal).
 - Revisión visual final y `docs/DUDAS_GUI.md`.
 
 ### Pruebas de la interfaz
 
-- `tests/test_controlador.py`: 9 tests de la pestaña 2 (modos, deduplicación,
-  valores exactos en el polinomio original, multiplicidad y entradas
-  inválidas). Total del proyecto: **103 tests** (`python -m pytest -q`).
-- Prueba funcional con Tkinter: se construyó `App`, se seleccionó la pestaña 2,
-  se ejecutaron los ejemplos y se verificaron filas, tarjeta, estado y cambio
-  de modo sin errores.
+- `tests/test_controlador.py`: tests de las pestañas 2, 3, 5 y 6 (modos,
+  deduplicación, valores exactos, multiplicidad, cotas, Sturm, Bairstow y
+  entradas inválidas). Total del proyecto: **111 tests** (`python -m pytest -q`).
+- Prueba funcional con Tkinter: se construyó `App`, se seleccionaron las
+  pestañas 2 y 3, se ejecutaron los ejemplos y se verificaron filas, tarjeta,
+  estado, banner y gráfico sin errores.
 
