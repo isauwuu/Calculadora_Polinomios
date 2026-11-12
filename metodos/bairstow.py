@@ -1,11 +1,13 @@
 import cmath
 import math
 
-from core.config import EPS_DEFAULT, MAX_ITER, convergio
+from core.config import (
+    EPS_DEFAULT, MAX_ITER_DEFAULT,
+    validar_epsilon, validar_max_iter, convergio,
+)
 from core.errores import EntradaInvalida, NoConverge
 from core.polinomio import Polinomio
 from core.resultado import Resultado
-from metodos.newton_halley import _validar_parametros
 
 # El determinante se considera casi nulo comparado con los términos que lo forman.
 _DET_REL = 1e-14
@@ -20,15 +22,15 @@ _TOL_REAL = 1e-9
 def _horner_cuadratico_float(
     coef: list[float], r: float, s: float, mejorado: bool = False
 ) -> list[float]:
-    """Doble Horner cuadrático para el factor x^2 - r*x - s.
+    """Doble Horner cuadrático para el factor x² - r·x - s.
 
-    coef va de menor a mayor grado y ya es float. Devuelve la fila b completa:
-    b[n]...b[2] son el cociente y b[1], b[0] el resto b1*x + b0.
+    coef va de menor a mayor grado y ya es float. Devuelve la fila b:
+    b[n]...b[2] son el cociente y b[1], b[0] el resto b1·x + b0.
 
-    Con `mejorado=True` se usa la variante del final del apunte (pág. 39), que
-    suma también r*b1 en b0. El resto cambia de forma, pero al converger
-    b1 = b0 = 0 y el factor es el mismo; la variante suele converger mejor
-    cuando la raíz es múltiple.
+    Con `mejorado=True` se usa la variante del apunte (pág. 39-40), que
+    suma también r·b1 en b0. Al converger b1 = b0 = 0 y el factor es el
+    mismo; la variante mejorada suele converger antes cuando hay raíces
+    múltiples.
     """
     n = len(coef) - 1
     b = [0.0] * (n + 1)
@@ -37,7 +39,8 @@ def _horner_cuadratico_float(
         b[n - 1] = coef[n - 1] + r * b[n]
     for i in range(n - 2, 0, -1):
         b[i] = coef[i] + r * b[i + 1] + s * b[i + 2]
-    if mejorado:
+    # Defensivo: b[2] solo existe si n >= 2
+    if mejorado and n >= 2:
         b[0] = coef[0] + r * b[1] + s * b[2]
     else:
         b[0] = coef[0] + s * b[2]
@@ -45,7 +48,12 @@ def _horner_cuadratico_float(
 
 
 def _raices_cuadraticas(a0: float, a1: float, a2: float) -> list[complex]:
-    """Raíces de a2*x^2 + a1*x + a0 con cmath (sirve para Disc < 0)."""
+    """Raíces de a2·x² + a1·x + a0 = 0 con cmath (sirve para Disc < 0).
+
+    Fórmula estándar: x = (-a1 ± √(a1² - 4·a2·a0)) / (2·a2).
+    Ojo: NO usamos la FormulaCuad del pseudocódigo del apunte, que tiene
+    un bug en el signo del discriminante. Esta es la versión correcta.
+    """
     discriminante = a1 * a1 - 4.0 * a2 * a0
     raiz = cmath.sqrt(discriminante)
     return [
@@ -55,7 +63,10 @@ def _raices_cuadraticas(a0: float, a1: float, a2: float) -> list[complex]:
 
 
 def _raices_factor(r: float, s: float) -> list[complex]:
-    """Raíces de x^2 - r*x - s = 0: (r ± sqrt(r^2 + 4s)) / 2."""
+    """Raíces de x² - r·x - s = 0: (r ± √(r² + 4s)) / 2.
+
+    Se apoya en _raices_cuadraticas con a2=1, a1=-r, a0=-s.
+    """
     return _raices_cuadraticas(-s, -r, 1.0)
 
 
@@ -120,7 +131,7 @@ def _refinar_factor(
     factor: int,
     mejorado: bool = False,
 ) -> tuple[bool, float, float, list[dict]]:
-    """Refina (r, s) para que x^2 - r*x - s sea factor de P.
+    """Refina (r, s) para que x² - r·x - s sea factor de P.
 
     Usa el doble Horner cuadrático del apunte y el sistema 2x2 de Newton.
     Si el determinante es casi nulo perturba (r, s) y sigue; si no logra
@@ -145,17 +156,10 @@ def _refinar_factor(
             # Perturbación positiva y determinista: no hay corrección de Newton.
             dr = 1e-3 * (1.0 + abs(r))
             ds = -1e-3 * (1.0 + abs(s))
-            pasos.append(
-                {
-                    "factor": factor,
-                    "iter": it,
-                    "r": r,
-                    "s": s,
-                    "dr": dr,
-                    "ds": ds,
-                    "perturbado": True,
-                }
-            )
+            pasos.append({
+                "factor": factor, "iter": it, "r": r, "s": s,
+                "dr": dr, "ds": ds, "perturbado": True,
+            })
             r += dr
             s += ds
             perturbaciones += 1
@@ -169,17 +173,10 @@ def _refinar_factor(
 
         r_sig = r + dr
         s_sig = s + ds
-        pasos.append(
-            {
-                "factor": factor,
-                "iter": it,
-                "r": r,
-                "s": s,
-                "dr": dr,
-                "ds": ds,
-                "perturbado": False,
-            }
-        )
+        pasos.append({
+            "factor": factor, "iter": it, "r": r, "s": s,
+            "dr": dr, "ds": ds, "perturbado": False,
+        })
 
         if not (math.isfinite(r_sig) and math.isfinite(s_sig)):
             return False, r, s, pasos
@@ -192,7 +189,7 @@ def _refinar_factor(
 
 
 def _deflactar(coef: list[float], r: float, s: float) -> list[float]:
-    """Divide P por (x^2 - r*x - s) y devuelve el cociente en float."""
+    """Divide P por x² - r·x - s y devuelve el cociente en float."""
     b = _horner_cuadratico_float(coef, r, s)
     return b[2:]
 
@@ -206,11 +203,11 @@ def bairstow(
     r0=0.0,
     s0=0.0,
     eps=EPS_DEFAULT,
-    max_iter=MAX_ITER,
+    max_iter=MAX_ITER_DEFAULT,
 ) -> Resultado:
     """Método de Bairstow: factores cuadráticos y raíces reales/complejas.
 
-    Trabaja con el factor x^2 - r*x - s (Algoritmo de Bairstow del apunte).
+    Trabaja con el factor x² - r·x - s (Algoritmo de Bairstow del apunte).
     Para cada factor refina (r, s) con el doble Horner cuadrático y el sistema
     de Newton; si el determinante es casi nulo perturba (r, s), y si un
     arranque no converge prueba otros. Si ningún arranque converge con el
@@ -218,11 +215,15 @@ def bairstow(
     P y repite hasta que el cociente sea lineal o cuadrático, que se resuelve
     con cmath. Las potencias de x (raíces en 0) se extraen antes de iterar.
 
+    Convención: el factor es x² - r·x - s. Para el TP (x² + p·x + q):
+    r = -p, s = -q. Esa conversión se hace en la GUI, no acá.
+
     valor = lista de raíces complejas (las reales tienen parte imaginaria 0).
     pasos = un diccionario por iteración con factor, iter, r, s, dr, ds y
             perturbado.
     """
-    eps, max_iter = _validar_parametros(eps, max_iter)
+    eps = validar_epsilon(eps)
+    max_iter = validar_max_iter(max_iter)
     r0, s0 = _validar_inicio(r0, s0)
 
     coef = p.a_float()  # una sola conversión a float, fuera de los bucles
@@ -242,9 +243,7 @@ def bairstow(
         raices.append(complex(0.0, 0.0))
         coef = coef[1:]
     if raices:
-        avisos.append(
-            f"Se extrajeron {len(raices)} raíz(es) en 0 antes de buscar factores."
-        )
+        avisos.append(f"Se extrajeron {len(raices)} raíz(es) en 0 antes de buscar factores.")
 
     grado = len(coef) - 1
     if grado == 0:
@@ -271,9 +270,8 @@ def bairstow(
     while len(trabajo) - 1 > 2:
         ok = False
         pasos_intento: list[dict] = []
-        # Primero el doble Horner estándar (el del ejemplo principal del
-        # apunte). Si ningún arranque converge, se prueba la variante
-        # mejorada de la página 39.
+        # Primero el doble Horner estándar. Si ningún arranque converge, se
+        # prueba la variante mejorada de la página 39.
         for mejorado in (False, True):
             for indice, (ri, si) in enumerate(_arranques(r0, s0)):
                 ok, r, s, pasos_intento = _refinar_factor(

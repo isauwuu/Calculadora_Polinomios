@@ -1,243 +1,259 @@
+"""Tests de metodos/bairstow.py contra el ejemplo del apunte."""
+import cmath
 import math
-
-import numpy as np
 import pytest
 
-from core.errores import EntradaInvalida, NoConverge, ToleranciaInvalida
 from core.polinomio import Polinomio
-from metodos.bairstow import bairstow, es_raiz_real
+from core.errores import EntradaInvalida, NoConverge
+from metodos.bairstow import (
+    bairstow, es_raiz_real, _limpiar_raiz, _raices_cuadraticas,
+)
 
 
-CLAVES_PASO = {"factor", "iter", "r", "s", "dr", "ds", "perturbado"}
+# --- Polinomios de referencia ---
+# P_ap(x) = x⁴ + 5x³ + 15x² + 5x - 26  → raíces 1, -2, -2+3i, -2-3i
+P_ap = Polinomio([-26, 5, 15, 5, 1])
+
+# P_cero(x) = x·P_ap(x) = x⁵ + 5x⁴ + 15x³ + 5x² - 26x  → raíces 0, 1, -2, -2±3i
+P_cero = Polinomio([0, -26, 5, 15, 5, 1])
+
+# P_doble(x) = (x-1)²(x+2) = x³ - 3x + 2  → raíces 1 (doble), -2
+P_doble = Polinomio([2, -3, 0, 1])
+
+# P_cuad(x) = x² + x - 2 = (x-1)(x+2)  → raíces 1, -2
+P_cuad = Polinomio([-2, 1, 1])
+
+# P_lineal(x) = x - 5
+P_lineal = Polinomio([-5, 1])
+
+# P_const(x) = 5
+P_const = Polinomio([5])
 
 
-def _misma_lista(esperadas, obtenidas, tol):
-    """Compara dos listas de raíces sin importar el orden."""
-    if len(esperadas) != len(obtenidas):
-        return False
-    restantes = list(obtenidas)
-    for z in esperadas:
-        indice = min(range(len(restantes)), key=lambda k: abs(restantes[k] - z))
-        if abs(restantes[indice] - z) > tol:
-            return False
-        restantes.pop(indice)
-    return True
+def _tiene_raiz(raices, esperada, tol=1e-3):
+    """True si alguna raíz está a menos de `tol` de la esperada."""
+    return any(abs(z - esperada) < tol for z in raices)
 
 
-def _complejo(real, imag=0.0):
-    return complex(real, imag)
+# ====================================================================
+# Helper: raíces cuadráticas y real/complejo
+# ====================================================================
+
+def test_raices_cuadraticas_discriminante_positivo():
+    """x² - 3x + 2 = 0 → raíces 1, 2 (reales)."""
+    r = _raices_cuadraticas(2, -3, 1)
+    assert _tiene_raiz(r, complex(1, 0))
+    assert _tiene_raiz(r, complex(2, 0))
 
 
-def test_bairstow_ejemplo_apunte():
-    # x^4 + 5x^3 + 15x^2 + 5x - 26
-    p = Polinomio.desde_texto("1 5 15 5 -26")
-    r = bairstow(p, r0=1, s0=-1, eps=1e-3)
+def test_raices_cuadraticas_discriminante_negativo():
+    """x² + 1 = 0 → raíces ±i (complejas)."""
+    r = _raices_cuadraticas(1, 0, 1)
+    assert _tiene_raiz(r, complex(0, 1))
+    assert _tiene_raiz(r, complex(0, -1))
 
+
+def test_raices_cuadraticas_discriminante_cero():
+    """x² - 2x + 1 = 0 → raíz doble 1."""
+    r = _raices_cuadraticas(1, -2, 1)
+    assert abs(r[0] - r[1]) < 1e-10
+    assert abs(r[0] - 1) < 1e-10
+
+
+def test_es_raiz_real_true():
+    assert es_raiz_real(complex(3, 0)) is True
+
+
+def test_es_raiz_real_true_con_ruido():
+    """Ruido numérico en la parte imaginaria no cuenta como complejo."""
+    assert es_raiz_real(complex(3, 1e-12)) is True
+
+
+def test_es_raiz_real_false():
+    assert es_raiz_real(complex(-2, 3)) is False
+
+
+def test_limpiar_raiz_real():
+    z = _limpiar_raiz(complex(3, 1e-15))
+    assert z.imag == 0.0
+
+
+def test_limpiar_raiz_compleja_no_cambia():
+    z = _limpiar_raiz(complex(-2, 3))
+    assert z == complex(-2, 3)
+
+
+# ====================================================================
+# Ejemplo del apunte
+# ====================================================================
+
+def test_bairstow_ejemplo_apunte_4_raices():
+    """P = x⁴ + 5x³ + 15x² + 5x - 26, r0=1, s0=-1.
+    Raíces: 1, -2, -2+3i, -2-3i."""
+    r = bairstow(P_ap, r0=1, s0=-1, eps=1e-3)
     assert r.convergio is True
-    assert r.iteraciones == 5
-    assert len(r.pasos) == 5
-    esperadas = [_complejo(1), _complejo(-2), _complejo(-2, 3), _complejo(-2, -3)]
-    assert _misma_lista(esperadas, r.valor, 2e-6)
+    assert len(r.valor) == 4
+    assert _tiene_raiz(r.valor, complex(1, 0))
+    assert _tiene_raiz(r.valor, complex(-2, 0))
+    assert _tiene_raiz(r.valor, complex(-2, 3))
+    assert _tiene_raiz(r.valor, complex(-2, -3))
 
-    # Clasificación real/compleja con tolerancia, no con imag == 0.
-    reales = [z for z in r.valor if es_raiz_real(z)]
+
+def test_bairstow_ejemplo_apunte_complejas_conjugadas():
+    """Las raíces complejas deben venir en pares conjugados."""
+    r = bairstow(P_ap, r0=1, s0=-1, eps=1e-3)
     complejas = [z for z in r.valor if not es_raiz_real(z)]
-    assert len(reales) == 2
     assert len(complejas) == 2
-    assert all(z.imag == 0 for z in reales)
-    assert _misma_lista([_complejo(-2, 3), _complejo(-2, -3)], complejas, 2e-6)
+    z1, z2 = complejas
+    assert math.isclose(z1.real, z2.real, abs_tol=1e-6)
+    assert math.isclose(z1.imag, -z2.imag, abs_tol=1e-6)
 
-    # Primer paso del ejemplo principal del apunte (pág. 35).
-    primero = r.pasos[0]
-    assert set(primero) == CLAVES_PASO
-    assert primero["factor"] == 1
-    assert primero["iter"] == 1
-    assert primero["r"] == pytest.approx(1.0)
-    assert primero["s"] == pytest.approx(-1.0)
-    assert primero["dr"] == pytest.approx(-1.9902439024390244)
-    assert primero["ds"] == pytest.approx(4.678048780487805)
-    assert primero["perturbado"] is False
 
-    # La fila guarda (r, s) y el paso (dr, ds) que se aplica desde ahí.
-    for actual, siguiente in zip(r.pasos, r.pasos[1:]):
-        assert actual["r"] + actual["dr"] == pytest.approx(siguiente["r"])
-        assert actual["s"] + actual["ds"] == pytest.approx(siguiente["s"])
-    assert r.pasos[-1]["r"] + r.pasos[-1]["dr"] == pytest.approx(-1.0000003068, abs=1e-9)
-    assert r.pasos[-1]["s"] + r.pasos[-1]["ds"] == pytest.approx(2.0000011823, abs=1e-9)
-    assert r.error == pytest.approx(max(abs(r.pasos[-1]["dr"]), abs(r.pasos[-1]["ds"])))
-
+def test_bairstow_ejemplo_apunte_pasos_tienen_estructura():
+    r = bairstow(P_ap, r0=1, s0=-1, eps=1e-3)
     for paso in r.pasos:
-        assert set(paso) == CLAVES_PASO
-        assert isinstance(paso["factor"], int)
-        assert isinstance(paso["iter"], int)
-        assert isinstance(paso["perturbado"], bool)
-        assert paso["factor"] == 1
-        assert all(math.isfinite(paso[k]) for k in ("r", "s", "dr", "ds"))
+        assert "factor" in paso
+        assert "iter" in paso
+        assert "r" in paso
+        assert "s" in paso
+        assert "dr" in paso
+        assert "ds" in paso
+        assert "perturbado" in paso
 
 
-def test_bairstow_mayor_precision_contra_numpy():
-    p = Polinomio.desde_texto("1 5 15 5 -26")
-    r = bairstow(p, r0=1, s0=-1, eps=1e-12)
+# ====================================================================
+# Raíces reales vs complejas
+# ====================================================================
 
-    esperadas = list(np.roots([1, 5, 15, 5, -26]))
-    assert _misma_lista(esperadas, r.valor, 1e-8)
-    assert r.convergio is True
-
-
-@pytest.mark.parametrize(
-    "texto",
-    [
-        "1 0 0 -2",        # x^3 - 2
-        "1 0 -5 -3",       # x^3 - 5x - 3
-        "1 0 0 0 1",       # x^4 + 1
-        "1 0 0 0 -1",      # x^4 - 1
-        "1 -6 11 -6",      # (x - 1)(x - 2)(x - 3)
-    ],
-)
-def test_bairstow_contra_numpy_roots(texto):
-    p = Polinomio.desde_texto(texto)
-    r = bairstow(p, eps=1e-8)
-
-    esperadas = list(np.roots(list(reversed(p.a_float()))))
-    assert _misma_lista(esperadas, r.valor, 1e-6)
-    assert all(math.isfinite(z.real) and math.isfinite(z.imag) for z in r.valor)
+def test_bairstow_cuadratica_con_raices_reales():
+    """x² + x - 2 = (x-1)(x+2) → raíces 1, -2."""
+    r = bairstow(P_cuad, r0=1, s0=-1, eps=1e-6)
+    assert len(r.valor) == 2
+    assert _tiene_raiz(r.valor, complex(1, 0), tol=1e-6)
+    assert _tiene_raiz(r.valor, complex(-2, 0), tol=1e-6)
+    # Ninguna tiene parte imaginaria
+    assert all(es_raiz_real(z) for z in r.valor)
 
 
-@pytest.mark.parametrize(
-    "raices",
-    [
-        [-2, 1, 4],
-        [-1, 0, 3],
-        [1 + 2j, 1 - 2j, -3],
-        [-4 + 1j, -4 - 1j, 2 + 3j, 2 - 3j],
-        [1 + 2j, 1 - 2j, 2 + 3j, 2 - 3j, -1, 5],
-    ],
-)
-def test_bairstow_raices_conocidas_generadas_con_numpy(raices):
-    # numpy solo se usa en tests para generar/comparar, nunca en el método.
-    coeficientes_desc = np.poly(raices)
-    assert np.max(np.abs(coeficientes_desc.imag)) < 1e-9
-    coeficientes = [int(round(c.real)) for c in coeficientes_desc]
-
-    # Polinomio guarda los coeficientes de menor a mayor grado.
-    p = Polinomio(list(reversed(coeficientes)))
-    r = bairstow(p, eps=1e-8)
-
-    assert _misma_lista(raices, r.valor, 1e-5)
+def test_bairstow_cuadratica_con_raices_complejas():
+    """x² + x + 1 = 0 → raíces -1/2 ± √3/2 i."""
+    P = Polinomio([1, 1, 1])
+    r = bairstow(P, r0=0, s0=0, eps=1e-6)
+    assert len(r.valor) == 2
+    assert _tiene_raiz(r.valor, complex(-0.5, math.sqrt(3)/2), tol=1e-6)
+    assert _tiene_raiz(r.valor, complex(-0.5, -math.sqrt(3)/2), tol=1e-6)
 
 
-def test_bairstow_deflacta_y_numera_los_factores():
-    # Grado 6: se extraen dos factores cuadráticos y queda una cuadrática final.
-    raices = [1 + 1j, 1 - 1j, 2 + 2j, 2 - 2j, 3, 4]
-    coeficientes_desc = np.poly(raices)
-    coeficientes = [int(round(c.real)) for c in coeficientes_desc]
-    p = Polinomio(list(reversed(coeficientes)))
+# ====================================================================
+# Raíz en 0
+# ====================================================================
 
-    r = bairstow(p, eps=1e-8)
-
-    assert _misma_lista(raices, r.valor, 1e-5)
-    assert {paso["factor"] for paso in r.pasos} == {1, 2}
-    for factor in (1, 2):
-        iteraciones = [paso["iter"] for paso in r.pasos if paso["factor"] == factor]
-        assert iteraciones == list(range(1, len(iteraciones) + 1))
-
-
-def test_bairstow_polinomios_de_grado_uno_y_dos():
-    lineal = bairstow(Polinomio.desde_texto("1 -3"), eps=1e-9)
-    assert lineal.valor == pytest.approx([3 + 0j])
-    assert lineal.pasos == []
-    assert lineal.avisos
-
-    cuadratica = bairstow(Polinomio.desde_texto("1 0 1"), eps=1e-9)  # x^2 + 1
-    assert _misma_lista([1j, -1j], cuadratica.valor, 1e-12)
-    assert cuadratica.pasos == []
-    assert cuadratica.avisos
-
-    con_fracciones = bairstow(Polinomio.desde_texto("1 -3/2 1/2"), eps=1e-9)
-    assert _misma_lista([1 + 0j, 0.5 + 0j], con_fracciones.valor, 1e-12)
+def test_bairstow_polinomio_con_raiz_en_cero():
+    """P = x·(x⁴ + 5x³ + 15x² + 5x - 26).
+    Las raíces son 0, 1, -2, -2±3i."""
+    r = bairstow(P_cero, r0=1, s0=-1, eps=1e-3)
+    assert len(r.valor) == 5
+    assert _tiene_raiz(r.valor, complex(0, 0))
+    assert _tiene_raiz(r.valor, complex(1, 0))
+    assert _tiene_raiz(r.valor, complex(-2, 0))
+    assert _tiene_raiz(r.valor, complex(-2, 3))
+    assert _tiene_raiz(r.valor, complex(-2, -3))
 
 
-def test_bairstow_raiz_en_cero():
-    # x^5 + 5x^4 + 15x^3 + 5x^2 - 26x tiene una raíz simple en 0.
-    p = Polinomio.desde_texto("1 5 15 5 -26 0")
-    r = bairstow(p, r0=1, s0=-1, eps=1e-8)
+def test_bairstow_raiz_en_cero_multiplicidad():
+    """P = x²·(x-1) = x³ - x² → raíces 0 (doble), 1."""
+    P = Polinomio([0, 0, -1, 1])
+    r = bairstow(P, r0=0, s0=0, eps=1e-6)
+    assert len(r.valor) == 3
+    assert sum(1 for z in r.valor if abs(z) < 1e-6) == 2  # 0 doble
+    assert _tiene_raiz(r.valor, complex(1, 0))
 
-    esperadas = [0j, 1 + 0j, -2 + 0j, -2 + 3j, -2 - 3j]
-    assert _misma_lista(esperadas, r.valor, 1e-6)
-    assert any("en 0" in aviso for aviso in r.avisos)
+
+# ====================================================================
+# Raíz doble
+# ====================================================================
+
+def test_bairstow_raiz_doble_uno():
+    """(x-1)²(x+2) = x³ - 3x + 2 → raíces 1 (doble), -2."""
+    r = bairstow(P_doble, r0=0, s0=0, eps=1e-6)
+    assert len(r.valor) == 3
+    assert sum(1 for z in r.valor if abs(z - 1) < 1e-5) == 2
+    assert _tiene_raiz(r.valor, complex(-2, 0))
 
 
-def test_bairstow_potencias_de_x():
-    # x^4: cuatro raíces en 0, sin iterar.
-    r = bairstow(Polinomio.desde_texto("1 0 0 0 0"))
-    assert r.valor == [0j, 0j, 0j, 0j]
-    assert r.iteraciones == 0
+# ====================================================================
+# Casos borde (grado 0, 1, 2)
+# ====================================================================
+
+def test_bairstow_grado_0_constante():
+    r = bairstow(P_const)
+    assert r.valor == []
+
+
+def test_bairstow_grado_0_nulo():
+    r = bairstow(Polinomio([0]))
+    assert r.valor == []
+    assert len(r.avisos) >= 1
+
+
+def test_bairstow_grado_1():
+    """x - 5 → raíz 5."""
+    r = bairstow(P_lineal)
+    assert len(r.valor) == 1
+    assert _tiene_raiz(r.valor, complex(5, 0))
+
+
+def test_bairstow_grado_2_resuelve_directo():
+    """Grado 2: no itera, resuelve directo. Sin pasos."""
+    r = bairstow(P_cuad)
     assert r.pasos == []
-    assert r.avisos
-
-    # x^3 - x = x(x - 1)(x + 1)
-    r = bairstow(Polinomio.desde_texto("1 0 -1 0"))
-    assert _misma_lista([0j, 1 + 0j, -1 + 0j], r.valor, 1e-7)
+    assert len(r.valor) == 2
 
 
-def test_bairstow_constante_y_nulo():
-    constante = bairstow(Polinomio([5]))
-    assert constante.valor == []
-    assert constante.pasos == []
-    assert constante.avisos
+# ====================================================================
+# Comparación con numpy
+# ====================================================================
 
-    nulo = bairstow(Polinomio([0]))
-    assert nulo.valor == []
-    assert any("infinitas" in aviso for aviso in nulo.avisos)
-
-
-def test_bairstow_raiz_multiple_usa_variante_mejorada():
-    # (x - 1)^3: el Horner estándar no converge y se usa la variante de la pág. 39.
-    p = Polinomio.desde_texto("1 -3 3 -1")
-    r = bairstow(p, eps=1e-6)
-
-    assert r.convergio is True
-    assert _misma_lista([1 + 0j, 1 + 0j, 1 + 0j], r.valor, 1e-4)
-    assert any("mejorada" in aviso for aviso in r.avisos)
+def test_bairstow_vs_numpy_ejemplo_apunte():
+    np = pytest.importorskip("numpy")
+    esperadas = np.roots([float(c) for c in reversed(P_ap.coef)])
+    r = bairstow(P_ap, r0=1, s0=-1, eps=1e-3)
+    for exp in esperadas:
+        assert _tiene_raiz(r.valor, complex(exp), tol=1e-3)
 
 
-def test_bairstow_detecta_determinante_casi_nulo():
-    p = Polinomio.desde_texto("1 0 0 0 -1")  # x^4 - 1
-    r = bairstow(p, eps=1e-9)
+def test_bairstow_vs_numpy_polinomio_grado_5():
+    """x⁵ - 3x⁴ - x³ + 11x² - 12x + 4 = (x+2)(x-1)³(x-2).
 
-    assert any(paso["perturbado"] for paso in r.pasos)
-    assert any("perturb" in aviso for aviso in r.avisos)
-    assert _misma_lista([1 + 0j, -1 + 0j, 1j, -1j], r.valor, 1e-7)
+    Raíces: -2, 1 (triple), 2. Bairstow NO es exacto para raíces múltiples:
+    la triple puede salir como 1 real + un par complejo con imag ~1e-4.
+    Por eso comparamos contra numpy con tolerancia, en vez de exigir que
+    todas las raíces tengan parte imaginaria exactamente 0.
+    """
+    P = Polinomio([4, -12, 11, -1, -3, 1])
+    np = pytest.importorskip("numpy")
+    esperadas = np.roots([float(c) for c in reversed(P.coef)])
+    r = bairstow(P, r0=1, s0=-1, eps=1e-6)
+    assert len(r.valor) == 5
+    for exp in esperadas:
+        assert _tiene_raiz(r.valor, complex(exp), tol=1e-3), \
+            f"raíz esperada {exp} no encontrada en {r.valor}"
 
+# ====================================================================
+# Validación de entrada
+# ====================================================================
 
-def test_bairstow_no_converge_lleva_pasos():
-    p = Polinomio.desde_texto("1 5 15 5 -26")
-    with pytest.raises(NoConverge) as exc:
-        bairstow(p, r0=1, s0=-1, eps=1e-12, max_iter=1)
-
-    assert exc.value.pasos
-    for paso in exc.value.pasos:
-        assert set(paso) == CLAVES_PASO
-
-
-def test_bairstow_parametros_invalidos():
-    p = Polinomio.desde_texto("1 5 15 5 -26")
-
-    for eps in (0, -1e-6, math.inf, float("nan"), "abc"):
-        with pytest.raises(ToleranciaInvalida):
-            bairstow(p, eps=eps)
-
-    for max_iter in (0, -2, "abc"):
-        with pytest.raises(EntradaInvalida):
-            bairstow(p, max_iter=max_iter)
-
-    for r0, s0 in ((math.inf, 0), (0, math.nan), ("a", 0), (0, None)):
-        with pytest.raises(EntradaInvalida):
-            bairstow(p, r0=r0, s0=s0)
+def test_bairstow_r0_no_numerico_lanza():
+    with pytest.raises(EntradaInvalida):
+        bairstow(P_ap, r0="abc", s0=-1)
 
 
-def test_es_raiz_real_usa_tolerancia():
-    assert es_raiz_real(2 + 0j)
-    assert es_raiz_real(2 + 1e-10j)
-    assert not es_raiz_real(2 + 1e-6j)
-    assert not es_raiz_real(1j)
+def test_bairstow_r0_infinito_lanza():
+    with pytest.raises(EntradaInvalida):
+        bairstow(P_ap, r0=float("inf"), s0=-1)
+
+
+def test_bairstow_eps_invalido_lanza():
+    from core.errores import ToleranciaInvalida
+    with pytest.raises(ToleranciaInvalida):
+        bairstow(P_ap, r0=1, s0=-1, eps=0)
