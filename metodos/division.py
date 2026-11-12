@@ -5,29 +5,35 @@ from core.resultado import Resultado
 from metodos.evaluacion import horner_fraction
 
 
-def dividir_por_x_mas_b(p: Polinomio, b) -> Resultado:
-    """Divide P(x) por (x + b) con Horner (Algoritmo 2 del apunte), exacto (Fraction).
-       Es horner_fraction evaluando en alpha = -b.
-       valor = (cociente: Polinomio, resto: Fraction).  P = (x + b) * Q + R
-       """
-    base = horner_fraction(p, -Fraction(b))
-    res = base.pasos[0][
-        "b"]  # [0] porque horner se resuelve en una iteracion asi q el paso resultante se guarda ahi, ademas representa la fila final de coeficientes calculados x horner
-    cociente = Polinomio(res[1:]) if p.grado >= 1 else Polinomio(
-        [0])  # b[1:] toma del indice 1 en adelante, el b[0] es el resto, si el grado es menor q cero, devuelve el pol nulo
+def dividir_por_x_menos_b(p: Polinomio, b) -> Resultado:
+    """Divide P(x) por (x - b) con Horner (equivalente al Algoritmo 2 del apunte,
+    que usa (x + b): dividir_por_x_menos_b(p, b) ≡ Alg2(p, -b)).
+
+    Convención de la GUI y del teorema del resto:
+      - Dividir por (x - 2) → b = 2.
+      - Dividir por (x + 3) → b = -3.
+
+    valor = (cociente: Polinomio, resto: Fraction).  P = (x - b) * Q + R
+    """
+    base = horner_fraction(p, Fraction(b))
+    res = base.pasos[0]["b"]
+    cociente = Polinomio(res[1:]) if p.grado >= 1 else Polinomio([0])
     return Resultado(valor=(cociente, res[0]), pasos=base.pasos)
 
 
 def dividir_por_ax_mas_b(p: Polinomio, a, b) -> Resultado:
     """Divide P(x) por (a*x + b) (Algoritmo 3 del apunte: HornerGral).
-    Se aplica Horner con b/a (divide por x + b/a) y el cociente se divide por a.
+
+    (a*x + b) = a·(x + b/a) = a·(x - (-b/a)), así que aplicamos Horner con
+    -b/a y después dividimos el cociente por 'a'.
+
     valor = (cociente: Polinomio, resto: Fraction).
     """
     a = Fraction(a)
     b = Fraction(b)
     if a == 0:
         raise DivisionPorCero("El coeficiente de x en (a*x + b) no puede ser 0.")
-    base = dividir_por_x_mas_b(p, b / a)
+    base = dividir_por_x_menos_b(p, -b / a)
     q, resto = base.valor
     cociente = Polinomio([c / a for c in q.coef])
     return Resultado(valor=(cociente, resto), pasos=base.pasos)

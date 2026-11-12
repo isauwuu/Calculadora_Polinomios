@@ -6,6 +6,7 @@ class Resultado:
     iteraciones: int = 0
     error: float | None = None                      # almacena el valor del error de la ultima iteracion
     convergio: bool = True
-    pasos: list = field(default_factory=list)       # lista de diccionarios, es la única fuente de información que alimenta simultáneamente a la tabla de la interfaz, el gráfico, la animación y el pedido al asistente de IA.
+    pasos: list = field(default_factory=list)       # lista de diccionarios, es la única fuente de información que alimenta simultáneamente a la tabla de la interfaz, el gráfico y la animación
     avisos: list = field(default_factory=list)      # textos para el usuario
     diagnostico: dict = field(default_factory=dict) # lo llena diagnostico.py  Estos  ultimos campos capaz sean prescindibles, ver dsp !!
+    multiplicidades: dict = field(default_factory=dict)  # {Fraction(raíz): int}

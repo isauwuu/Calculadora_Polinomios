@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 from fractions import Fraction
+
+from core import mensajes
 from core.errores import PolinomioInvalido
 from core.numeros import parsear_coeficientes, parsear_numero, parsear_expresion
 
@@ -28,30 +30,31 @@ class Polinomio:
     def grado(self) -> int:
         return len(self.coef) - 1
 
+    @property
+    def es_cero(self) -> bool:
+        return self.grado == 0 and self.coef[0] == 0
+
     @classmethod
     def desde_texto(cls, texto: str):
-        """Crea el polinomio parseando la entrada del usuario (de mayor a menor grado)."""
         coeficientes = parsear_coeficientes(texto)
-
         if not coeficientes:
-            raise PolinomioInvalido("El polinomio está vacío.")
-
-        # Los ceros a la izquierda no pueden ser el coeficiente principal.
+            raise PolinomioInvalido(mensajes.POLINOMIO_VACIO)
         while coeficientes and coeficientes[0] == 0:
             coeficientes.pop(0)
-
         if not coeficientes:
-            raise PolinomioInvalido("El coeficiente principal no puede ser 0.")
-
-        # Invertir para que quede de menor a mayor grado internamente
+            raise PolinomioInvalido(mensajes.COEF_PRINCIPAL_CERO)
         coeficientes.reverse()
-        return cls(coeficientes)
+        p = cls(coeficientes)
+        if p.es_cero:
+            raise PolinomioInvalido(mensajes.COEF_PRINCIPAL_CERO)
+        return p
 
     @classmethod
     def desde_expresion(cls, texto: str):
-        """Crea el polinomio parseando una expresión algebraica (ej: 'x^2 + 3x + 5')."""
-        coeficientes = parsear_expresion(texto)
-        return cls(coeficientes)
+        p = cls(parsear_expresion(texto))
+        if p.es_cero:
+            raise PolinomioInvalido(mensajes.COEF_PRINCIPAL_CERO)
+        return p
 
     def derivada(self):
         """Calcula la derivada analítica del polinomio."""

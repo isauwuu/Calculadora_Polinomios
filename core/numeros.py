@@ -1,14 +1,18 @@
 from fractions import Fraction
 import math
 import re
+
+from core import mensajes
 from core.errores import EntradaInvalida, PolinomioInvalido
 
 def parsear_numero(texto: str) -> Fraction:
-    """Convierte un texto ('3/2', '-5', '1.5') a una fracción exacta."""
     try:
         return Fraction(texto.strip())
     except (ValueError, ZeroDivisionError):
-        raise EntradaInvalida(f"'{texto}' no es un número válido. Se aceptan enteros, decimales (.) y fracciones como 3/2.")
+        try:
+            return Fraction(str(float(texto)))
+        except (ValueError, OverflowError):
+            raise EntradaInvalida(mensajes.ENTRADA_NO_NUMERO.format(texto=texto))
 
 
 def parsear_coeficientes(texto: str) -> list[Fraction]:
@@ -75,8 +79,11 @@ def parsear_expresion(texto: str) -> list[Fraction]:
     return [coef_por_grado.get(i, Fraction(0)) for i in range(max_grado + 1)]
 
 
-def es_finito(numero: float) -> bool:
-    """Verifica que un float no sea infinito ni NaN (útil para detectar overflow)."""
-    return math.isfinite(numero)
+def es_finito(numero) -> bool:
+    """True si el número es finito. Acepta int, float, Fraction; nunca crashea."""
+    try:
+        return math.isfinite(float(numero))
+    except (TypeError, ValueError, OverflowError):
+        return False
 
 

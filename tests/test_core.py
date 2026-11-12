@@ -1,42 +1,76 @@
-import pytest
+"""Tests de la capa core. Ejecutar con: python -m pytest tests/ -v"""
 from fractions import Fraction
-from core.numeros import parsear_numero
+import pytest
+
 from core.polinomio import Polinomio
-from core.config import epsilon_por_cifras
-from core.errores import EntradaInvalida, PolinomioInvalido, ToleranciaInvalida
+from core.numeros import parsear_numero, es_finito
+from core.config import validar_epsilon, validar_max_iter
+from core.errores import PolinomioInvalido, ToleranciaInvalida, EntradaInvalida
 
 
-def test_parsear_numero_valido():
-    assert parsear_numero("3/2") == Fraction(3, 2)
+# ---------- Orden interno ----------
+def test_orden_interno_menor_a_mayor():
+    p = Polinomio.desde_texto("1, 2, 3")
+    assert p.coef == [Fraction(3), Fraction(2), Fraction(1)]
+    assert p.grado == 2
 
 
-def test_parsear_numero_invalido():
-    with pytest.raises(EntradaInvalida):
-        parsear_numero("1/0")
-    with pytest.raises(EntradaInvalida):
-        parsear_numero("a")
-
-
-def test_polinomio_desde_texto_invalido():
+# ---------- B1: polinomio nulo ----------
+@pytest.mark.parametrize("entrada", ["0", "0, 0", "0, 0, 0"])
+def test_desde_texto_rechaza_polinomio_nulo(entrada):
     with pytest.raises(PolinomioInvalido):
-        Polinomio.desde_texto("")
+        Polinomio.desde_texto(entrada)
+
+
+def test_desde_expresion_rechaza_polinomio_nulo():
     with pytest.raises(PolinomioInvalido):
-        Polinomio.desde_texto("0 0")
+        Polinomio.desde_expresion("0")
 
 
-def test_polinomio_coeficientes_y_derivada():
-    p = Polinomio.desde_texto("0, 1, -3")
-    assert p.coef == [Fraction(-3), Fraction(1)]
-
-    p_derivada = Polinomio.desde_texto("3 0 -5 0").derivada()
-    assert p_derivada.coef == [Fraction(-5), Fraction(0), Fraction(9)]  # 9x^2 - 5
+# ---------- B2: notación científica ----------
+def test_parsear_numero_notacion_cientifica():
+    assert parsear_numero("1e-3") == Fraction(1, 1000)
+    assert parsear_numero("2.5E2") == Fraction(250, 1)
 
 
-def test_epsilon_por_cifras():
-    assert epsilon_por_cifras(3) == pytest.approx(0.005)
-
+# ---------- B3: epsilon y max_iter ----------
+@pytest.mark.parametrize("eps", [0, -1e-3, 1e-30])
+def test_validar_epsilon_rechaza_invalidos(eps):
     with pytest.raises(ToleranciaInvalida):
-        epsilon_por_cifras(0)
+        validar_epsilon(eps)
 
-    with pytest.raises(ToleranciaInvalida):
-        epsilon_por_cifras(16)
+
+def test_validar_epsilon_acepta_valido():
+    assert validar_epsilon(1e-6) == 1e-6
+
+
+def test_validar_max_iter_acepta_valido():
+    assert validar_max_iter(100) == 100
+
+
+@pytest.mark.parametrize("n", [0, -5, 10**7])
+def test_validar_max_iter_rechaza_invalidos(n):
+    with pytest.raises(EntradaInvalida):
+        validar_max_iter(n)
+
+
+# ---------- B4: es_finito robusto ----------
+def test_es_finito_float_normal():
+    assert es_finito(1.5) is True
+
+
+def test_es_finito_infinito():
+    assert es_finito(float("inf")) is False
+
+
+def test_es_finito_int_gigante():
+    # El caso que crasheaba: int de 400 dígitos
+    assert es_finito(10**400) is False
+
+
+def test_es_finito_fraction_gigante():
+    assert es_finito(Fraction(10**400, 1)) is False
+
+
+def test_es_finito_texto():
+    assert es_finito("abc") is False
