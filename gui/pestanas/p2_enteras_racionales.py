@@ -3,7 +3,7 @@
 import tkinter as tk
 
 from gui import controlador
-from gui.estilo import CARD
+from gui.estilo import CARD, GREEN, RED
 from gui.formato import formatear_fraccion, formatear_polinomio
 from gui.graficos import texto_referencia
 from gui.pestanas.base import PestanaBase
@@ -149,7 +149,8 @@ class PestanaEnterasRacionales(PestanaBase):
             texto_referencia(self._coef),
             tono=tono,
         )
-        self._dibujar(raices)
+        self._dibujar(raices, resultado.pasos)
+        self._animar([{"i": i} for i in range(len(resultado.pasos))])
 
     def _factorizacion(self, raices):
         try:
@@ -205,24 +206,71 @@ class PestanaEnterasRacionales(PestanaBase):
         return "enteras ni racionales"
 
     # ------------------------------------------------------------------ gráfico
-    def _dibujar(self, raices):
+    def _dibujar(self, raices, pasos):
+        """Dibuja la curva y prepara un marcador por candidato probado."""
         flotantes = [float(r) for r in raices]
         titulo = f"P(x) = {self._texto_coef.strip()[:42]}"
         self.grafico.dibujar(self._coef, puntos=flotantes, titulo=titulo)
-        for i, raiz in enumerate(flotantes):
-            self.grafico.raiz(raiz, etiqueta="Raíces" if i == 0 else None)
-        if not flotantes:
-            self.grafico.ax.text(
+        ax = self.grafico.ax
+        self._marcadores_candidatos = []
+        hubo_rojo = False
+        hubo_verde = False
+
+        for paso in pasos:
+            x = float(paso["candidato"])
+            y = float(paso["valor"])
+            es_raiz = bool(paso["es_raiz"])
+            color = GREEN if es_raiz else RED
+            etiqueta = None
+            if es_raiz and not hubo_verde:
+                etiqueta = "Candidato raíz"
+                hubo_verde = True
+            elif not es_raiz and not hubo_rojo:
+                etiqueta = "Candidato descartado"
+                hubo_rojo = True
+            linea = ax.plot(
+                [x],
+                [y],
+                marker="o",
+                color=color,
+                markerfacecolor="none" if es_raiz else color,
+                markeredgewidth=1.5,
+                markersize=6,
+                linestyle="none",
+                label=etiqueta,
+                visible=False,
+                zorder=7,
+            )[0]
+            self._marcadores_candidatos.append((linea, es_raiz))
+
+        if not pasos:
+            ax.text(
                 0.5,
                 0.92,
                 f"Sin raíces {self._etiqueta_negativa()}",
-                transform=self.grafico.ax.transAxes,
+                transform=ax.transAxes,
                 ha="center",
                 va="top",
                 fontsize=8,
                 color="#6A7B86",
             )
         self.grafico.finalizar(ubicacion="best")
+
+    def _aplicar_paso(self, indice):
+        """Muestra los candidatos probados hasta el paso activo."""
+        super()._aplicar_paso(indice)
+        for i, (linea, _es_raiz) in enumerate(
+            getattr(self, "_marcadores_candidatos", [])
+        ):
+            visible = i <= indice
+            linea.set_visible(visible)
+            if i == indice:
+                linea.set_markersize(9)
+                linea.set_alpha(1.0)
+            else:
+                linea.set_markersize(5)
+                linea.set_alpha(0.55)
+        self.grafico.redibujar()
 
     def _mostrar_pasos_error(self, pasos):
         self._configurar_columnas(self._modo)

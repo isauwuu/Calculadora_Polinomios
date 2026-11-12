@@ -6,6 +6,7 @@ que una pestaña pueda avisar "Método aún no disponible" sin romper la ventana
 """
 
 import importlib
+import cmath
 import math
 from fractions import Fraction
 
@@ -14,6 +15,7 @@ from core.errores import EntradaInvalida, PolinomioInvalido, ToleranciaInvalida
 from core.numeros import parsear_coeficientes, parsear_numero
 from core.polinomio import Polinomio
 from core.resultado import Resultado
+from gui.formato import formatear_fraccion, formatear_polinomio
 
 
 # ---------------------------------------------------------------------------
@@ -135,6 +137,476 @@ def dividir(texto, tipo_divisor, parametros):
     b = _parametros_racionales(parametros, 1, ("b",))[0]
     f = _metodo("metodos.division", "dividir_por_x_mas_b")
     return f(p, b)
+
+
+# ---------------------------------------------------------------------------
+# Pestaña 1: esquemas de Ruffini/Horner para dibujar (solo presentación)
+# ---------------------------------------------------------------------------
+
+def _como_polinomio(valor):
+    """Acepta un Polinomio, el texto del usuario o coeficientes de mayor a menor."""
+    if isinstance(valor, Polinomio):
+        return valor
+    if isinstance(valor, str):
+        return Polinomio.desde_texto(valor)
+    return Polinomio(list(reversed(list(valor))))
+
+
+def _texto_polinomio(coeficientes_alto):
+    """Polinomio legible a partir de coeficientes de mayor a menor."""
+    if not coeficientes_alto:
+        return "0"
+    return formatear_polinomio(list(reversed(coeficientes_alto)))
+
+
+def _texto(valor):
+    if valor is None:
+        return ""
+    if isinstance(valor, Fraction):
+        return formatear_fraccion(valor)
+    return str(valor)
+
+
+def tabla_ruffini(polinomio, alpha):
+    """Arma la tabla clásica de Ruffini de P dividido por (x - α).
+
+    ``polinomio`` puede ser un ``Polinomio``, el texto de coeficientes o una
+    lista de coeficientes de MAYOR a menor grado (como se escribe en la GUI).
+    Devuelve las tres filas numéricas (``fila1``, ``fila2`` y ``fila3``) y el
+    cociente/resto. La fila 1 son los coeficientes, la fila 2 los productos
+    α·b_i (la primera celda es None) y la fila 3 las sumas.
+    """
+    p = _como_polinomio(polinomio)
+    a = Fraction(alpha)
+    fila1 = list(reversed(p.coef))
+    fila2 = [None] * len(fila1)
+    fila3 = [Fraction(0)] * len(fila1)
+    fila3[0] = fila1[0]
+
+    calculos = ["coeficiente principal"]
+    for j in range(1, len(fila1)):
+        fila2[j] = a * fila3[j - 1]
+        fila3[j] = fila1[j] + fila2[j]
+        calculos.append(
+            f"{_texto(a)}·{_texto(fila3[j - 1])} + {_texto(fila1[j])} = "
+            f"{_texto(fila3[j])}"
+        )
+
+    return {
+        "alpha": a,
+        "fila1": fila1,
+        "fila2": fila2,
+        "productos": fila2,
+        "fila3": fila3,
+        "suma": fila3,
+        "cociente": fila3[:-1],
+        "resto": fila3[-1],
+        "calculos": calculos,
+    }
+
+
+def tabla_ruffini_doble(polinomio, alpha):
+    """Dos esquemas de Ruffini apilados: P(α) y P'(α)."""
+    p = _como_polinomio(polinomio)
+    primera = tabla_ruffini(p, alpha)
+    if p.grado == 0:
+        return {
+            "primera": primera,
+            "segunda": None,
+            "p_alpha": primera["resto"],
+            "dp_alpha": Fraction(0),
+        }
+
+    # El cociente de la primera pasada es el polinomio que se evalúa de nuevo.
+    cociente = Polinomio(list(reversed(primera["cociente"])))
+    segunda = tabla_ruffini(cociente, alpha)
+    return {
+        "primera": primera,
+        "segunda": segunda,
+        "p_alpha": primera["resto"],
+        "dp_alpha": segunda["resto"],
+    }
+
+
+def tabla_ruffini_cuadratica(polinomio, a, b):
+    """Esquema de Horner cuadrático para el divisor x² + a·x + b.
+
+    Sigue exactamente las fórmulas de ``metodos.division.horner_cuadratico``:
+        c[n] = coef[n]
+        c[n-1] = coef[n-1] - a·c[n]
+        c[i] = coef[i] - a·c[i+1] - b·c[i+2]
+        c[0] = coef[0] - b·c[2]
+    El cociente es c[2:] y el resto c[1]·x + c[0]. Se agregan las dos filas
+    de productos para poder dibujar el esquema del apunte.
+    """
+    p = _como_polinomio(polinomio)
+    a = Fraction(a)
+    b = Fraction(b)
+    n = p.grado
+    coef = p.coef
+
+    if n < 2:
+        return {
+            "tipo": "cuadratica",
+            "grado_menor": True,
+            "a": a,
+            "b": b,
+            "fila1": list(reversed(coef)),
+            "fila2": [None] * len(coef),
+            "fila3": [None] * len(coef),
+            "productos_a": [None] * len(coef),
+            "productos_b": [None] * len(coef),
+            "suma": [None] * len(coef),
+            "cociente": [],
+            "resto": list(reversed(coef)),
+            "calculos": ["El grado de P es menor que el del divisor."],
+        }
+
+    c = [Fraction(0)] * (n + 1)
+    c[n] = coef[n]
+    c[n - 1] = coef[n - 1] - a * c[n]
+    for i in range(n - 2, 0, -1):
+        c[i] = coef[i] - a * c[i + 1] - b * c[i + 2]
+    c[0] = coef[0] - b * c[2]
+
+    fila1 = list(reversed(coef))
+    suma = list(reversed(c))
+    productos_a = [None] * (n + 1)
+    productos_b = [None] * (n + 1)
+    calculos = []
+
+    for j, i in enumerate(range(n, -1, -1)):
+        if i + 1 <= n:
+            productos_a[j] = -a * c[i + 1]
+        if i + 2 <= n:
+            productos_b[j] = -b * c[i + 2]
+
+        if i == n:
+            calculos.append("baja el coeficiente principal")
+        elif i == n - 1:
+            calculos.append(
+                f"{_texto(fila1[j])} − {_texto(a)}·{_texto(c[i + 1])} = "
+                f"{_texto(c[i])}"
+            )
+        elif i == 0:
+            calculos.append(
+                f"{_texto(fila1[j])} − {_texto(b)}·{_texto(c[i + 2])} = "
+                f"{_texto(c[i])}"
+            )
+        else:
+            calculos.append(
+                f"{_texto(fila1[j])} − {_texto(a)}·{_texto(c[i + 1])} − "
+                f"{_texto(b)}·{_texto(c[i + 2])} = {_texto(c[i])}"
+            )
+
+    return {
+        "tipo": "cuadratica",
+        "grado_menor": False,
+        "a": a,
+        "b": b,
+        "fila1": fila1,
+        "fila2": productos_a,
+        "productos_a": productos_a,
+        "productos_b": productos_b,
+        "fila3": suma,
+        "suma": suma,
+        "cociente": list(reversed(c[2:])),
+        "resto": [c[1], c[0]],
+        "calculos": calculos,
+    }
+
+
+def tabla_ruffini_cuadratica_normalizada(polinomio, a, b, c):
+    """Ruffini cuadrático para ax² + bx + c, normalizando por a.
+
+    P / (a·x² + b·x + c) = (1/a) · P / (x² + (b/a)·x + c/a).
+    Se dibuja el esquema del divisor mónico y se divide el cociente por a.
+    """
+    p = _como_polinomio(polinomio)
+    a = Fraction(a)
+    if a == 0:
+        raise EntradaInvalida("El coeficiente 'a' de ax² + bx + c no puede ser 0.")
+    b = Fraction(b)
+    c = Fraction(c)
+    base = tabla_ruffini_cuadratica(p, b / a, c / a)
+    base["normalizada"] = a
+    base["cociente_sin_normalizar"] = list(base["cociente"])
+    base["cociente"] = [coef / a for coef in base["cociente"]]
+    return base
+
+
+def tabla_ruffini_ax_mas_b(polinomio, a, b):
+    """Ruffini para ax + b: α = −b/a y el cociente se divide por a."""
+    p = _como_polinomio(polinomio)
+    a = Fraction(a)
+    if a == 0:
+        raise EntradaInvalida("El coeficiente 'a' de ax + b no puede ser 0.")
+    b = Fraction(b)
+    base = tabla_ruffini(p, -b / a)
+    base["normalizada"] = a
+    base["cociente_sin_normalizar"] = list(base["cociente"])
+    base["cociente"] = [coef / a for coef in base["cociente"]]
+    return base
+
+
+def _seccion_ruffini(datos, etiqueta_alpha, titulo=None, nota="", cuadratica=False):
+    """Convierte las filas numéricas de Ruffini en una sección para la vista."""
+    fila1 = datos["fila1"]
+    fila2 = datos.get("productos_a", datos["fila2"]) if cuadratica else datos["fila2"]
+    fila3 = datos["fila3"]
+    ancho = len(fila1) + 1
+    filas = [
+        {
+            "valores": [""] + [_texto(v) for v in fila1],
+            "tipo": "coef",
+            "calculos": [""] + list(datos["calculos"]),
+        },
+        {
+            "valores": [etiqueta_alpha] + ["" if v is None else _texto(v) for v in fila2],
+            "tipo": "producto",
+            "calculos": [""] * ancho,
+        },
+    ]
+    if cuadratica:
+        productos_b = datos.get("productos_b", [None] * len(fila1))
+        filas.append(
+            {
+                "valores": ["−b·c"] + ["" if v is None else _texto(v) for v in productos_b],
+                "tipo": "producto",
+                "calculos": [""] * ancho,
+            }
+        )
+    filas.append(
+        {
+            "valores": [""] + [_texto(v) for v in fila3],
+            "tipo": "suma",
+            "separador_arriba": True,
+            "calculos": [""] + list(datos["calculos"]),
+        }
+    )
+
+    # Las celdas de resto son las últimas de la fila de sumas. En el esquema
+    # cuadrático el resto tiene grado 1 y ocupa las dos últimas columnas.
+    ultima = len(filas) - 1
+    resto = [(ultima, len(fila1))] if not cuadratica else [
+        (ultima, len(fila1) - 1),
+        (ultima, len(fila1)),
+    ]
+    return {
+        "titulo": titulo,
+        "columnas": None,
+        "filas": filas,
+        "resto": resto,
+        "cociente": [(ultima, j) for j in range(1, len(fila1))],
+        "nota": nota,
+    }
+
+
+def _seccion_tabla(columnas, filas, titulo=None, nota=""):
+    return {
+        "titulo": titulo,
+        "columnas": list(columnas),
+        "filas": list(filas),
+        "nota": nota,
+    }
+
+
+def _esquema_evaluacion_directa(pasos):
+    filas = []
+    for paso in pasos:
+        filas.append(
+            {
+                "valores": [
+                    str(paso["i"]),
+                    _texto(paso["coef"]),
+                    _texto(paso["potencia"]),
+                    _texto(paso["termino"]),
+                    _texto(paso["acumulado"]),
+                ],
+                "tipo": "normal",
+                "calculos": [
+                    f"grado {paso['i']}",
+                    _texto(paso["coef"]),
+                    f"α^{paso['i']} = {_texto(paso['potencia'])}",
+                    f"{_texto(paso['coef'])}·{_texto(paso['potencia'])} = {_texto(paso['termino'])}",
+                    f"suma acumulada = {_texto(paso['acumulado'])}",
+                ],
+            }
+        )
+    return _seccion_tabla(
+        ["i", "Coef", "α^i", "Coef · α^i", "Acumulado"],
+        filas,
+        nota="Evaluación directa: se suman los términos uno por uno.",
+    )
+
+
+def esquema_evaluacion(texto, alpha, metodo):
+    """Devuelve las secciones y los pasos de animación de la pestaña 1."""
+    p = leer_polinomio(texto)
+    a = parsear_racional(alpha, "el punto α")
+    clave = str(metodo).strip().lower()
+
+    if clave.startswith("directa"):
+        resultado = evaluar(texto, alpha, metodo)
+        seccion = _esquema_evaluacion_directa(resultado.pasos)
+        pasos = [{"seccion": 0, "fila": i} for i in range(len(resultado.pasos))]
+        return {"secciones": [seccion], "pasos": pasos}
+
+    if "doble" in clave:
+        datos = tabla_ruffini_doble(p, a)
+        primera = _seccion_ruffini(
+            datos["primera"],
+            f"α = {_texto(a)}",
+            "P(α)",
+            f"P(α) = {_texto(datos['p_alpha'])}",
+        )
+        if datos["segunda"] is not None:
+            segunda = _seccion_ruffini(
+                datos["segunda"],
+                f"α = {_texto(a)}",
+                "P'(α)",
+                f"P'(α) = {_texto(datos['dp_alpha'])}",
+            )
+            secciones = [primera, segunda]
+            pasos = [
+                {"seccion": 0, "columna": j, "filas": [0, 1, 2]}
+                for j in range(1, len(datos["primera"]["fila1"]) + 1)
+            ]
+            pasos += [
+                {"seccion": 1, "columna": j, "filas": [0, 1, 2]}
+                for j in range(1, len(datos["segunda"]["fila1"]) + 1)
+            ]
+        else:
+            secciones = [primera]
+            pasos = [
+                {"seccion": 0, "columna": j, "filas": [0, 1, 2]}
+                for j in range(1, len(datos["primera"]["fila1"]) + 1)
+            ]
+        return {"secciones": secciones, "pasos": pasos}
+
+    datos = tabla_ruffini(p, a)
+    seccion = _seccion_ruffini(
+        datos,
+        f"α = {_texto(a)}",
+        nota=f"Cociente: {_texto_polinomio(datos['cociente'])} · "
+        f"Resto = P(α) = {_texto(datos['resto'])}",
+    )
+    pasos = [
+        {"seccion": 0, "columna": j, "filas": [0, 1, 2]}
+        for j in range(1, len(datos["fila1"]) + 1)
+    ]
+    return {"secciones": [seccion], "pasos": pasos}
+
+
+def _esquema_division_general(resultado):
+    filas = []
+    for paso in resultado.pasos:
+        filas.append(
+            {
+                "valores": [
+                    str(paso["k"]),
+                    _texto(paso["factor"]),
+                    formatear_polinomio(paso["resto"]),
+                ],
+                "tipo": "normal",
+                "calculos": [
+                    f"grado del cociente: {paso['k']}",
+                    f"factor = {_texto(paso['factor'])}",
+                    f"resto parcial = {formatear_polinomio(paso['resto'])}",
+                ],
+            }
+        )
+    cociente, resto = resultado.valor
+    return _seccion_tabla(
+        ["k", "Factor", "Resto parcial"],
+        filas,
+        nota=f"Cociente: {cociente} · Resto: {resto}",
+    )
+
+
+def esquema_division(texto, tipo_divisor, parametros):
+    """Devuelve las secciones y los pasos de animación de la pestaña 1."""
+    p = leer_polinomio(texto)
+    tipo = str(tipo_divisor).strip().lower().replace("²", "2")
+
+    if "general" in tipo:
+        resultado = dividir(texto, tipo_divisor, parametros)
+        seccion = _esquema_division_general(resultado)
+        pasos = [{"seccion": 0, "fila": i} for i in range(len(resultado.pasos))]
+        return {"secciones": [seccion], "pasos": pasos}
+
+    if tipo.startswith("a") and "x2" in tipo:
+        a, b, c = _parametros_racionales(parametros, 3, ("a", "b", "c"))
+        datos = tabla_ruffini_cuadratica_normalizada(p, a, b, c)
+        nota = (
+            f"Divisor normalizado: x² + {_texto(Fraction(b, 1) / Fraction(a))}·x + "
+            f"{_texto(Fraction(c, 1) / Fraction(a))}. "
+            f"El cociente del esquema se divide por a = {_texto(Fraction(a))}."
+        )
+        seccion = _seccion_ruffini(
+            datos,
+            "−b/a, −c/a",
+            nota=nota + " · Cociente: " + _texto_polinomio(datos["cociente"]),
+            cuadratica=True,
+        )
+        pasos = [
+            {"seccion": 0, "columna": j, "filas": [0, 1, 2, 3]}
+            for j in range(1, len(datos["fila1"]) + 1)
+        ]
+        return {"secciones": [seccion], "pasos": pasos}
+
+    if "x2" in tipo:
+        a, b = _parametros_racionales(parametros, 2, ("a", "b"))
+        datos = tabla_ruffini_cuadratica(p, a, b)
+        if datos.get("grado_menor"):
+            seccion = _seccion_tabla(
+                ["Coeficiente"],
+                [{"valores": [_texto(v)], "tipo": "normal"} for v in datos["fila1"]],
+                nota="El grado de P es menor que el del divisor: C(x) = 0 y R(x) = P(x).",
+            )
+            return {"secciones": [seccion], "pasos": []}
+        seccion = _seccion_ruffini(
+            datos,
+            "−a, −b",
+            nota=f"Cociente: {_texto_polinomio(datos['cociente'])} · "
+            f"Resto: {_texto_polinomio(datos['resto'])}",
+            cuadratica=True,
+        )
+        pasos = [
+            {"seccion": 0, "columna": j, "filas": [0, 1, 2, 3]}
+            for j in range(1, len(datos["fila1"]) + 1)
+        ]
+        return {"secciones": [seccion], "pasos": pasos}
+
+    if tipo.startswith("a"):
+        a, b = _parametros_racionales(parametros, 2, ("a", "b"))
+        datos = tabla_ruffini_ax_mas_b(p, a, b)
+        alpha = -Fraction(b) / Fraction(a)
+        seccion = _seccion_ruffini(
+            datos,
+            f"α = {_texto(alpha)}",
+            nota=f"α = −b/a = {_texto(alpha)}. Cociente final = "
+            f"{_texto_polinomio(datos['cociente'])} · Resto = {_texto(datos['resto'])}",
+        )
+        pasos = [
+            {"seccion": 0, "columna": j, "filas": [0, 1, 2]}
+            for j in range(1, len(datos["fila1"]) + 1)
+        ]
+        return {"secciones": [seccion], "pasos": pasos}
+
+    b = _parametros_racionales(parametros, 1, ("b",))[0]
+    datos = tabla_ruffini(p, -Fraction(b))
+    seccion = _seccion_ruffini(
+        datos,
+        f"α = −b = {_texto(-Fraction(b))}",
+        nota=f"Cociente: {_texto_polinomio(datos['cociente'])} · "
+        f"Resto: {_texto(datos['resto'])}",
+    )
+    pasos = [
+        {"seccion": 0, "columna": j, "filas": [0, 1, 2]}
+        for j in range(1, len(datos["fila1"]) + 1)
+    ]
+    return {"secciones": [seccion], "pasos": pasos}
 
 
 # ---------------------------------------------------------------------------
@@ -355,27 +827,112 @@ def sturm(texto, a_texto, b_texto, simplificada=False):
     )
 
 
+def biseccion_sturm(texto, a_texto, b_texto, simplificada=False):
+    """Estados de la subdivisión de Sturm para animar la pestaña 5.
+
+    No es un método nuevo: usa ``contar_raices`` y elige puntos de corte que
+    no sean raíz, igual que ``separar_raices``. Devuelve una lista de estados;
+    cada estado es la frontera de intervalos con su cantidad de raíces.
+    """
+    p = leer_polinomio(texto)
+    a = parsear_racional(a_texto, "el extremo a")
+    b = parsear_racional(b_texto, "el extremo b")
+    contar = _metodo("metodos.sturm", "contar_raices")
+    evaluar = _metodo("metodos.evaluacion", "horner_fraction")
+
+    def valor_en(x):
+        return evaluar(p, x).valor
+
+    def punto_no_raiz(x, y):
+        for nivel in range(1, 21):
+            denominador = 2 ** nivel
+            for numerador in range(1, denominador, 2):
+                punto = x + (y - x) * Fraction(numerador, denominador)
+                if valor_en(punto) != 0:
+                    return punto
+        raise EntradaInvalida("No se encontró un punto de corte que no sea raíz.")
+
+    def cantidad(x, y):
+        return contar(p, x, y, simplificada).valor
+
+    total = cantidad(a, b)
+    frontera = [(a, b, total, 0)]
+    estados = [
+        {
+            "intervalos": [(x, y, c) for x, y, c, _d in frontera],
+            "division": None,
+        }
+    ]
+
+    while True:
+        pendiente = next(
+            (i for i, (_x, _y, c, _d) in enumerate(frontera) if c > 1),
+            None,
+        )
+        if pendiente is None:
+            break
+        x, y, _cantidad, profundidad = frontera[pendiente]
+        punto = punto_no_raiz(x, y)
+        izquierda = cantidad(x, punto)
+        derecha = _cantidad - izquierda
+        hijos = []
+        if izquierda:
+            hijos.append((x, punto, izquierda, profundidad + 1))
+        if derecha:
+            hijos.append((punto, y, derecha, profundidad + 1))
+        frontera[pendiente : pendiente + 1] = hijos
+        estados.append(
+            {
+                "intervalos": [(ix, iy, c) for ix, iy, c, _d in frontera],
+                "division": (x, y, punto),
+            }
+        )
+        if len(estados) > 400:
+            break
+
+    return {"a": a, "b": b, "estados": estados}
+
+
 # ---------------------------------------------------------------------------
 # Pestaña 6: Bairstow
 # ---------------------------------------------------------------------------
 
+def raices_del_factor(r, s):
+    """Raíces de x² − r·x − s, para dibujar el movimiento de (r, s).
+
+    Es solo presentación: usa la misma fórmula que el núcleo, con floats.
+    """
+    try:
+        discriminante = complex(float(r) ** 2 + 4.0 * float(s), 0.0)
+        raiz = cmath.sqrt(discriminante)
+        return [complex((float(r) + raiz) / 2.0), complex((float(r) - raiz) / 2.0)]
+    except (TypeError, ValueError, OverflowError):
+        return []
+
+
 def _anotar_raices_por_factor(pasos):
-    """Agrega las raíces del factor en la última fila de cada factor."""
+    """Agrega las raíces del factor en la última fila de cada factor.
+
+    También guarda en cada paso ``raices_actuales``: las raíces del factor
+    cuadrático con el (r, s) de esa iteración, para animar su movimiento.
+    """
     copia = [dict(paso) for paso in pasos]
     grupos = {}
     for i, paso in enumerate(copia):
         grupos.setdefault(paso.get("factor"), []).append(i)
-    try:
-        from metodos.bairstow import _raices_factor
-    except ImportError:
-        return copia
+        try:
+            copia[i]["raices_actuales"] = tuple(
+                raices_del_factor(paso["r"], paso["s"])
+            )
+        except (KeyError, TypeError, ValueError):
+            copia[i]["raices_actuales"] = ()
 
     for indices in grupos.values():
         ultimo = copia[indices[-1]]
         try:
             r = ultimo["r"] + ultimo["dr"]
             s = ultimo["s"] + ultimo["ds"]
-            ultimo["raices_factor"] = tuple(_raices_factor(r, s))
+            ultimo["raices_factor"] = tuple(raices_del_factor(r, s))
         except (KeyError, TypeError, ValueError, ZeroDivisionError):
             pass
     return copia
@@ -399,9 +956,12 @@ __all__ = [
     "EPS_DEFAULT",
     "MAX_ITER",
     "bairstow",
+    "biseccion_sturm",
     "coeficientes_float",
     "cotas",
     "dividir",
+    "esquema_division",
+    "esquema_evaluacion",
     "evaluar",
     "factorizar_raices",
     "leer_polinomio",
@@ -410,5 +970,11 @@ __all__ = [
     "parsear_racional",
     "parsear_tolerancia",
     "raices",
+    "raices_del_factor",
     "sturm",
+    "tabla_ruffini",
+    "tabla_ruffini_ax_mas_b",
+    "tabla_ruffini_cuadratica",
+    "tabla_ruffini_cuadratica_normalizada",
+    "tabla_ruffini_doble",
 ]

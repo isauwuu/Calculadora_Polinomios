@@ -5,7 +5,8 @@ from tkinter import ttk
 import traceback
 
 from core.errores import EntradaInvalida, ErrorNumerico, PolinomioInvalido
-from gui.estilo import BG, CARD, GREEN, NAVY
+from gui.animacion import BarraAnimacion
+from gui.estilo import BG, CARD, GREEN, INK, NAVY
 from gui.graficos import GraficoSimple
 from gui.widgets import (
     Banner,
@@ -28,6 +29,9 @@ class PestanaBase(tk.Frame):
     titulo_tabla = "Pasos"
     subtitulo_tabla = "(campo 'pasos' del Resultado)"
     grafico_clase = GraficoSimple
+    titulo_derecha = "Gráfico"
+    icono_derecha = "chart"
+    usa_grafico = True
 
     def __init__(self, master, app, grafico_clase=None):
         super().__init__(master, bg=BG)
@@ -37,19 +41,20 @@ class PestanaBase(tk.Frame):
         self._primer_entry = None
         self._resultado_visible = False
         self._banner_visible = False
+        self._pasos_animados = []
 
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=27, uniform="tarjetas")
         self.grid_columnconfigure(1, weight=41, uniform="tarjetas")
         self.grid_columnconfigure(2, weight=32, uniform="tarjetas")
 
+        if grafico_clase is not None:
+            self.grafico_clase = grafico_clase
+
         self._construir_esquema()
         self.construir_entrada(self.entrada)
         self._crear_botones(self.entrada)
-
-        clase = grafico_clase or self.grafico_clase
-        self.grafico = clase(self.grafico_host, self)
-        self.grafico.pack(fill="both", expand=True)
+        self.tabla.al_elegir_paso = self._elegir_paso
 
         self._bind_enter(self)
         self.after_idle(self._grafico_inicial)
@@ -84,9 +89,48 @@ class PestanaBase(tk.Frame):
         self.card_grafico = Card(self, r=16, fill=CARD, outer=BG, deco="blobs")
         self.card_grafico.grid(row=0, column=2, sticky="nsew", padx=(5, 0), pady=(6, 0))
         derecho = self.card_grafico.inner
-        self._encabezado(derecho, "chart", "Gráfico").pack(anchor="w", pady=(0, 3))
-        self.grafico_host = tk.Frame(derecho, bg=CARD)
-        self.grafico_host.pack(fill="both", expand=True)
+        encabezado = self._encabezado(derecho, self.icono_derecha, self.titulo_derecha)
+        encabezado.pack(anchor="w", fill="x", pady=(0, 3))
+        if self.usa_grafico:
+            self._crear_boton_reset(encabezado)
+        self.animacion_host = tk.Frame(derecho, bg=CARD)
+        self.animacion_host.pack(side="bottom", fill="x", pady=(6, 0))
+        self.barra = BarraAnimacion(
+            self.animacion_host,
+            self.fuentes,
+            al_cambiar=self._paso_animacion,
+        )
+        self.barra.pack(fill="x")
+        self.derecho_host = tk.Frame(derecho, bg=CARD)
+        self.derecho_host.pack(fill="both", expand=True)
+        self._crear_derecha(self.derecho_host)
+
+    def _crear_derecha(self, host):
+        """Crea el contenido de la tarjeta derecha (gráfico por defecto)."""
+        clase = self.grafico_clase
+        self.grafico = clase(host, self)
+        self.grafico.pack(fill="both", expand=True)
+
+    def _crear_boton_reset(self, encabezado):
+        """Botón compacto para volver a la vista inicial del gráfico."""
+        self.boton_reset = RButton(
+            encabezado,
+            "Restablecer vista",
+            self._reset_vista,
+            "#F8FAF9",
+            INK,
+            "#EDF2EF",
+            outline="#CFDAD4",
+            font=self.fuentes.small,
+            height=28,
+        )
+        self.boton_reset.configure(width=124)
+        self.boton_reset.pack(side="right", padx=(4, 0))
+
+    def _reset_vista(self):
+        grafico = getattr(self, "grafico", None)
+        if grafico is not None:
+            grafico.reset_vista()
 
     def _encabezado(self, parent, icono, texto, subtitulo=None):
         fila = tk.Frame(parent, bg=CARD)
@@ -209,6 +253,8 @@ class PestanaBase(tk.Frame):
     # ------------------------------------------------------------------ cálculo y errores
     def calcular(self, evento=None):
         """Único punto que atrapa errores de entrada, cálculo e internos."""
+        self.barra.detener()
+        self._pasos_animados = []
         self.tabla.limpiar()
         self._ocultar_tarjeta()
         self._ocultar_banner()
@@ -222,6 +268,8 @@ class PestanaBase(tk.Frame):
             return
         except Exception:
             traceback.print_exc()
+            self._pasos_animados = []
+            self.barra.configurar([])
             self._ocultar_tarjeta()
             self.tabla.limpiar()
             self._limpiar_grafico("Ocurrió un error interno.")
@@ -237,6 +285,8 @@ class PestanaBase(tk.Frame):
             self._estado("error", "Error interno al mostrar el resultado. Revisá la consola.")
 
     def _manejar_error(self, exc, tono):
+        self._pasos_animados = []
+        self.barra.configurar([])
         if getattr(exc, "pasos", None):
             self._mostrar_pasos_error(exc.pasos)
         self._ocultar_tarjeta()
@@ -319,17 +369,56 @@ class PestanaBase(tk.Frame):
     def _calcular(self):
         raise NotImplementedError
 
+    # ------------------------------------------------------------------ animación
+    def _animar(self, pasos, inicial=None):
+        """Carga los pasos en la barra común; por defecto muestra el último."""
+        self._pasos_animados = list(pasos or [])
+        self.barra.configurar(self._pasos_animados, inicial=inicial)
+
+    def _paso_animacion(self, indice):
+        try:
+            self._aplicar_paso(indice)
+        except Exception:
+            # Una animación nunca debe tumbar el resultado ya calculado.
+            traceback.print_exc()
+
+    def _aplicar_paso(self, indice):
+        """Comportamiento común: resaltar la fila del paso en la tabla."""
+        if 0 <= indice < len(self._pasos_animados):
+            self.tabla.seleccionar(indice)
+        else:
+            self.tabla.quitar_seleccion()
+
+    def _elegir_paso(self, indice):
+        if self._pasos_animados and 0 <= indice < len(self._pasos_animados):
+            self.barra.controlador.ir_a(indice)
+            self.barra._actualizar()
+
+    def _limpiar_derecha(self, mensaje):
+        """Limpia el gráfico o la tabla de Ruffini, según la pestaña."""
+        contenido = getattr(self, "grafico", None) or getattr(self, "ruffini", None)
+        if contenido is not None:
+            contenido.limpiar(mensaje)
+
     def _limpiar_grafico(self, mensaje):
-        self.grafico.limpiar(mensaje)
+        self._limpiar_derecha(mensaje)
+
+    def _redibujar_derecha(self):
+        contenido = getattr(self, "grafico", None) or getattr(self, "ruffini", None)
+        if contenido is not None:
+            contenido.redibujar()
 
     def _grafico_inicial(self):
-        self._limpiar_grafico("Ingresá los datos y presioná Calcular.")
+        self._limpiar_derecha("Ingresá los datos y presioná Calcular.")
 
     def _estado(self, tipo, mensaje):
         self.app.estado(tipo, mensaje)
 
     # ------------------------------------------------------------------ limpiar / teclado
     def limpiar(self, evento=None):
+        self.barra.detener()
+        self._pasos_animados = []
+        self.barra.configurar([])
         for variable in self._vars_entrada:
             variable.set("")
         self.tabla.limpiar()
@@ -352,7 +441,15 @@ class PestanaBase(tk.Frame):
         return "break"
 
     def al_mostrar(self):
-        self.after_idle(self.grafico.redibujar)
+        self.after_idle(self._redibujar_derecha)
+        self.after_idle(self.barra.redibujar)
+
+    def al_ocultar(self):
+        """Cancela la reproducción pendiente al cambiar de pestaña."""
+        self.barra.detener()
 
     def cerrar(self):
-        self.grafico.cerrar()
+        self.barra.cerrar()
+        contenido = getattr(self, "grafico", None) or getattr(self, "ruffini", None)
+        if contenido is not None:
+            contenido.cerrar()

@@ -204,10 +204,11 @@ class RButton(tk.Canvas):
         self._size = None
         self._hov = False
         self._imagen = None
+        self.habilitado = True
         self.bind("<Configure>", self._al_configurar)
         self.bind("<Enter>", lambda _: self._hover(True))
         self.bind("<Leave>", lambda _: self._hover(False))
-        self.bind("<ButtonRelease-1>", lambda _: self.cmd() if self.cmd else None)
+        self.bind("<ButtonRelease-1>", self._click)
 
     def _al_configurar(self, evento):
         self._size = (evento.width, evento.height)
@@ -217,28 +218,47 @@ class RButton(tk.Canvas):
         self._hov = valor
         self._dibujar()
 
+    def _click(self, _evento=None):
+        if self.cmd and self.habilitado:
+            self.cmd()
+
+    def set_habilitado(self, valor):
+        """Habilita o deshabilita el botón sin cambiar su texto."""
+        self.habilitado = bool(valor)
+        try:
+            self.configure(cursor="hand2" if self.habilitado else "arrow")
+        except tk.TclError:
+            pass
+        self._dibujar()
+
+    def set_texto(self, texto):
+        """Cambia la etiqueta (por ejemplo Reproducir/Pausar)."""
+        self.t = texto
+        self._dibujar()
+
     def _dibujar(self):
         if not self._size:
             return
         w, h = self._size
-        color = self.hover if self._hov else self.fill
+        color = self.hover if (self._hov and self.habilitado) else self.fill
         pil = imagenes.rounded_image(w, h, 12, color, self.outline, 1, 0, False, self.bgc)
         self._imagen = imagenes.photo(pil)
         self.delete("all")
         self.create_image(0, 0, image=self._imagen, anchor="nw")
         ancho_icono = self.icon.width() if self.icon else 0
         gap = 8 if self.icon else 0
-        total = ancho_icono + gap + self.font.measure(self.t)
+        texto = self.t
+        total = ancho_icono + gap + self.font.measure(texto)
         x0 = (w - total) / 2
         if self.icon:
             self.create_image(x0, h / 2, image=self.icon, anchor="w")
         self.create_text(
             x0 + ancho_icono + gap,
             h / 2,
-            text=self.t,
+            text=texto,
             anchor="w",
             font=self.font,
-            fill=self.fg,
+            fill=self.fg if self.habilitado else "#93A29B",
         )
 
 
@@ -397,6 +417,9 @@ class TablaPasos(tk.Frame):
         self.tree.tag_configure("perturbado", background=AMBER_L, foreground=AMBER)
         self.tree.tag_configure("cero", background=AMBER_L, foreground=AMBER)
         self.tree.tag_configure("resto", background=BLUE_L, foreground=NAVY)
+        self.al_elegir_paso = None
+        self._seleccion_programatica = False
+        self.tree.bind("<<TreeviewSelect>>", self._al_seleccionar)
 
     def configurar(self, columnas):
         """columnas: lista de (clave, título, ancho, alineación)."""
@@ -431,6 +454,38 @@ class TablaPasos(tk.Frame):
 
     def filas(self):
         return len(self.tree.get_children())
+
+    def seleccionar(self, indice):
+        """Resalta la fila del paso activo sin disparar el callback de clic."""
+        hijos = self.tree.get_children()
+        self._seleccion_programatica = True
+        try:
+            if 0 <= indice < len(hijos):
+                item = hijos[indice]
+                self.tree.selection_set(item)
+                self.tree.focus(item)
+                self.tree.see(item)
+            else:
+                seleccion = self.tree.selection()
+                if seleccion:
+                    self.tree.selection_remove(*seleccion)
+        finally:
+            self._seleccion_programatica = False
+
+    def quitar_seleccion(self):
+        self.seleccionar(-1)
+
+    def _al_seleccionar(self, _evento=None):
+        if self._seleccion_programatica or self.al_elegir_paso is None:
+            return
+        seleccion = self.tree.selection()
+        if not seleccion:
+            return
+        try:
+            indice = self.tree.index(seleccion[0])
+        except tk.TclError:
+            return
+        self.al_elegir_paso(indice)
 
 
 class TarjetaResultado(Card):

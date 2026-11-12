@@ -135,16 +135,39 @@ merge a `main`). El núcleo no se modifica.
   converge, se muestran los pasos del último intento. Probada con
   `x^4 + 5x^3 + 15x^2 + 5x - 26` (1, −2, −2 ± 3i), `x^4 - 1`, `x^2 + 1`,
   raíz en 0, constante y `NoConverge`.
+- Pestaña 1 con tablas de Ruffini/Horner: se reemplazó el gráfico por la tabla
+  de la tarjeta derecha (`gui/ruffini.py`) y se agregaron los ocho esquemas
+  (evaluación directa, Horner, Horner doble, `x + b`, `ax + b`, `x² + ax + b`,
+  `ax² + bx + c` y división general). La tabla resalta columnas durante la
+  animación y muestra el cálculo de cada celda al pasar el mouse.
+- Animaciones comunes (`gui/animacion.py`) con play/pausa, paso anterior y
+  siguiente, reiniciar y velocidad lenta/normal/rápida. Se conectaron en las
+  seis pestañas: candidatos en la 2, bandas en la 3, iteraciones en la 4,
+  bisección en la 5 y deflación/factores en la 6.
+- Gráficos dinámicos en `gui/graficos.py`: zoom con la rueda, paneo con
+  arrastre, botón para restablecer la vista, hover con `x`/`P(x)` y clic para
+  elegir `x0` en Newton/Halley. En Bairstow el hover distingue el eje real del
+  plano complejo.
 
 ### Pendiente
 
-- Revisión visual final y `docs/DUDAS_GUI.md`.
+- Revisión visual final en pantalla y ajustes menores de estética, si hicieran
+  falta.
 
 ### Pruebas de la interfaz
 
 - `tests/test_controlador.py`: tests de las pestañas 2, 3, 5 y 6 (modos,
   deduplicación, valores exactos, multiplicidad, cotas, Sturm, Bairstow y
-  entradas inválidas). Total del proyecto: **111 tests** (`python -m pytest -q`).
+  entradas inválidas).
+- `tests/test_gui_ruffini.py`: ejemplos del apunte, α entero y fraccionario,
+  coeficientes cero, Horner doble, `ax + b`, esquema cuadrático normalizado,
+  grado menor que el divisor y los ocho esquemas completos.
+- `tests/test_gui_animacion.py`: lógica pura del controlador (índice inicial,
+  límites, reinicio, callbacks, `after`, velocidades y play/pausa).
+- `tests/test_gui_smoke.py`: un smoke test por pestaña que abre `App`, calcula
+  los ejemplos y recorre los pasos de la animación; se saltea si Tkinter no
+  puede abrir una ventana.
+- Total del proyecto: **145 tests** (`python -m pytest -q`).
 - Prueba funcional con Tkinter: se construyó `App`, se recorrieron las seis
   pestañas, se ejecutaron los ejemplos y se verificaron filas, tarjeta,
   estado, banner y gráfico sin errores. Ya no quedan pestañas temporales.

@@ -3,7 +3,7 @@
 import tkinter as tk
 
 from gui import controlador
-from gui.estilo import AMBER_L, CARD, GREEN_L, MUTED, ORANGE
+from gui.estilo import AMBER_L, CARD, GREEN_L, INK, LINE, MUTED, NAVY, ORANGE
 from gui.formato import (
     formatear_fraccion,
     formatear_intervalo,
@@ -134,7 +134,20 @@ class PestanaSturm(PestanaBase):
             texto_referencia(self._coef),
             tono="amber" if resultado.avisos else "verde",
         )
+        self._estados_sturm = []
+        try:
+            datos = controlador.biseccion_sturm(
+                self._texto_coef,
+                self.v_a.get(),
+                self.v_b.get(),
+                simplificada=self._modo.startswith("Simpl"),
+            )
+            self._estados_sturm = datos.get("estados", [])
+        except Exception:
+            # La animación es opcional: si falla, queda el resultado estático.
+            self._estados_sturm = []
         self._dibujar(intervalos)
+        self._animar([{"i": i} for i in range(len(self._estados_sturm))])
 
     def _mensaje_exito(self, resultado):
         cantidad = resultado.valor["cantidad"]
@@ -157,7 +170,7 @@ class PestanaSturm(PestanaBase):
         self.grafico.dibujar(self._coef, puntos=[a, b], titulo=titulo)
         ax = self.grafico.ax
 
-        ax.axvspan(a, b, color=AMBER_L, alpha=0.6, label="Intervalo (a, b)", zorder=1)
+        ax.axvspan(a, b, color=AMBER_L, alpha=0.5, label="Intervalo (a, b)", zorder=1)
         for x, nombre, valor in ((a, "a", self._a), (b, "b", self._b)):
             ax.axvline(
                 x,
@@ -167,16 +180,104 @@ class PestanaSturm(PestanaBase):
                 label=f"{nombre} = {formatear_fraccion(valor)}",
                 zorder=2,
             )
-        for i, (izq, der) in enumerate(intervalos):
-            ax.axvspan(
-                float(izq),
-                float(der),
-                color=GREEN_L,
-                alpha=0.9,
-                label="Raíz aislada" if i == 0 else None,
-                zorder=1,
-            )
+
+        self._artistas_sturm = []
+        self._texto_sturm = ax.text(
+            0.02,
+            0.98,
+            "",
+            transform=ax.transAxes,
+            ha="left",
+            va="top",
+            fontsize=7,
+            color=MUTED,
+            zorder=10,
+        )
+
+        if not self._estados_sturm:
+            # Sin estados de bisección queda la separación final calculada.
+            for i, (izq, der) in enumerate(intervalos):
+                ax.axvspan(
+                    float(izq),
+                    float(der),
+                    color=GREEN_L,
+                    alpha=0.9,
+                    label="Raíz aislada" if i == 0 else None,
+                    zorder=1,
+                )
         self.grafico.finalizar(ubicacion="best")
+
+    def _aplicar_paso(self, indice):
+        """Muestra la bisección acumulada hasta el paso activo.
+
+        La tabla de esta pestaña es la sucesión de Sturm, no los subintervalos:
+        por eso no se resalta una fila, solo se redibujan las bandas.
+        """
+        for artista in getattr(self, "_artistas_sturm", []):
+            try:
+                artista.remove()
+            except (ValueError, AttributeError):
+                pass
+        self._artistas_sturm = []
+        self.tabla.quitar_seleccion()
+
+        texto = getattr(self, "_texto_sturm", None)
+        if texto is not None:
+            texto.set_text("")
+
+        if indice < 0 or not self._estados_sturm:
+            self.grafico.redibujar()
+            return
+
+        indice = min(indice, len(self._estados_sturm) - 1)
+        estado = self._estados_sturm[indice]
+        ax = self.grafico.ax
+
+        for x, y, cantidad in estado.get("intervalos", []):
+            if cantidad <= 0:
+                continue
+            x, y = float(x), float(y)
+            color = GREEN_L if cantidad == 1 else AMBER_L
+            self._artistas_sturm.append(
+                ax.axvspan(x, y, color=color, alpha=0.85, zorder=1)
+            )
+            sustantivo = "raíz" if cantidad == 1 else "raíces"
+            self._artistas_sturm.append(
+                ax.text(
+                    (x + y) / 2.0,
+                    0.96,
+                    f"{cantidad} {sustantivo}",
+                    transform=ax.get_xaxis_transform(),
+                    ha="center",
+                    va="top",
+                    fontsize=7,
+                    color=NAVY,
+                    bbox=dict(
+                        boxstyle="round,pad=0.18",
+                        fc="white",
+                        ec=LINE,
+                        alpha=0.88,
+                    ),
+                    zorder=10,
+                )
+            )
+
+        division = estado.get("division")
+        if division:
+            self._artistas_sturm.append(
+                ax.axvline(
+                    float(division[2]),
+                    color=NAVY,
+                    lw=1.0,
+                    ls="--",
+                    zorder=4,
+                )
+            )
+        if texto is not None:
+            texto.set_text(
+                f"Bisección de Sturm · paso {indice + 1}/{len(self._estados_sturm)}"
+            )
+        self.grafico.redibujar()
 
     def _mostrar_pasos_error(self, pasos):
         self._configurar_columnas()

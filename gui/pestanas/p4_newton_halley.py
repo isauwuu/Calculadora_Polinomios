@@ -109,34 +109,112 @@ class PestanaNewtonHalley(PestanaBase):
             tono=tono,
         )
         self._dibujar(resultado)
+        self._animar([{"n": i} for i in range(len(resultado.pasos))])
 
     def _dibujar(self, resultado):
+        """Dibuja la curva y prepara los artistas de cada iteración."""
         puntos = [paso["x"] for paso in resultado.pasos]
         if resultado.valor is not None:
             puntos.append(resultado.valor)
         titulo = f"P(x) = {self._texto_coef.strip()[:42]}"
         self.grafico.dibujar(self._coef, puntos=puntos, titulo=titulo)
+        ax = self.grafico.ax
+        self._puntos_iteracion = []
+        self._lineas_iteracion = []
+        self._curvas_halley = []
 
         for i, paso in enumerate(resultado.pasos):
-            self.grafico.ax.plot(
+            punto = ax.plot(
+                [paso["x"]],
+                [paso["p"]],
+                marker="o",
+                color="#F4A83A",
+                markersize=5,
+                linestyle="none",
+                label="Iteraciones" if i == 0 else None,
+                visible=False,
+                zorder=6,
+            )[0]
+            self._puntos_iteracion.append(punto)
+
+            linea = ax.plot(
                 [paso["x"], paso["x_sig"]],
                 [paso["p"], 0.0],
                 color="#F4A83A",
                 lw=0.9,
                 ls="--",
                 alpha=0.75,
+                visible=False,
                 zorder=2,
-            )
-            self.grafico.punto(
-                paso["x"],
-                paso["p"],
-                etiqueta="Iteraciones" if i == 0 else None,
-                color="#F4A83A",
-                ms=5,
-            )
+            )[0]
+            self._lineas_iteracion.append(linea)
+
+            if "d2p" in paso:
+                # Parábola osculadora de Halley; se recorta al tramo del paso.
+                xs = [
+                    paso["x"] + (paso["x_sig"] - paso["x"]) * t / 24.0
+                    for t in range(25)
+                ]
+                ys = [
+                    paso["p"]
+                    + paso["dp"] * (x - paso["x"])
+                    + 0.5 * paso["d2p"] * (x - paso["x"]) ** 2
+                    for x in xs
+                ]
+                curva = ax.plot(
+                    xs,
+                    ys,
+                    color="#2F9A5B",
+                    lw=1.0,
+                    ls=":",
+                    alpha=0.8,
+                    visible=False,
+                    zorder=3,
+                )[0]
+                self._curvas_halley.append(curva)
+            else:
+                self._curvas_halley.append(None)
+
+        self._raiz_art = None
         if resultado.valor is not None:
-            self.grafico.raiz(resultado.valor, etiqueta="Raíz aproximada")
+            self._raiz_art = ax.plot(
+                [resultado.valor],
+                [0.0],
+                marker="o",
+                color="#2F9A5B",
+                markerfacecolor="none",
+                markeredgewidth=1.8,
+                markersize=10,
+                linestyle="none",
+                label="Raíz aproximada",
+                visible=False,
+                zorder=7,
+            )[0]
+
+        self.grafico.al_clic = self._elegir_x0
         self.grafico.finalizar(ubicacion="best")
+
+    def _aplicar_paso(self, indice):
+        for i, punto in enumerate(getattr(self, "_puntos_iteracion", [])):
+            visible = i <= indice
+            punto.set_visible(visible)
+            punto.set_markersize(8 if i == indice else 5)
+            linea = self._lineas_iteracion[i]
+            linea.set_visible(visible)
+            linea.set_alpha(0.95 if i == indice else 0.45)
+            curva = self._curvas_halley[i]
+            if curva is not None:
+                curva.set_visible(visible)
+                curva.set_alpha(0.9 if i == indice else 0.35)
+        if getattr(self, "_raiz_art", None) is not None:
+            self._raiz_art.set_visible(indice >= len(self._puntos_iteracion) - 1)
+        super()._aplicar_paso(indice)
+        self.grafico.redibujar()
+
+    def _elegir_x0(self, x):
+        """Un clic en el gráfico completa x0, pero no calcula solo."""
+        self.v_x0.set(formatear_float(x, 7))
+        self._estado("ok", "x0 elegido en el gráfico. Presioná Calcular para iterar.")
 
     def _mostrar_pasos_error(self, pasos):
         self._configurar_columnas(self.v_metodo.get())

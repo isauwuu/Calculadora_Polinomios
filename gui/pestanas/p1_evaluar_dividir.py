@@ -6,19 +6,23 @@ from fractions import Fraction
 from core.errores import EntradaInvalida
 from core.polinomio import Polinomio
 from gui import controlador
-from gui.estilo import CARD, GREEN, ORANGE
+from gui.estilo import CARD
 from gui.formato import (
     formatear_fraccion,
     formatear_polinomio,
     formatear_float,
 )
-from gui.graficos import evaluar_curva, raices_referencia, texto_referencia
+from gui.graficos import evaluar_curva
 from gui.pestanas.base import PestanaBase
+from gui.ruffini import TablaEsquema
 
 
 class PestanaEvaluarDividir(PestanaBase):
     titulo_tabla = "Esquema de Horner"
-    subtitulo_tabla = "(pasos del Resultado)"
+    subtitulo_tabla = "(detalle de los pasos)"
+    titulo_derecha = "Tabla de Ruffini"
+    icono_derecha = "table"
+    usa_grafico = False
 
     DIVISORES = [
         "x + b",
@@ -83,6 +87,11 @@ class PestanaEvaluarDividir(PestanaBase):
         # El cambio de operación muestra el panel correspondiente, venga de un
         # clic en el selector o de una asignación desde el código.
         self.v_modo.trace_add("write", lambda *_: self._cambiar_modo())
+
+    def _crear_derecha(self, host):
+        """La tarjeta derecha muestra el esquema de Ruffini, no un gráfico."""
+        self.ruffini = TablaEsquema(host, self.fuentes)
+        self.ruffini.pack(fill="both", expand=True)
 
     # ------------------------------------------------------------------ modo
     def _cambiar_modo(self):
@@ -282,28 +291,48 @@ class PestanaEvaluarDividir(PestanaBase):
         filas = self._filas(resultado.pasos)
         self.tabla.cargar(filas, self._tags(filas))
         self._mostrar_tarjeta()
+        self._mostrar_esquema()
         if self._modo == "Evaluar":
             self._mostrar_evaluacion(resultado)
         else:
             self._mostrar_division(resultado)
+
+    def _mostrar_esquema(self):
+        """Pinta la tabla de Ruffini/Horner en la tarjeta derecha."""
+        try:
+            if self._modo == "Evaluar":
+                esquema = controlador.esquema_evaluacion(
+                    self._texto_coef, self.v_alpha.get(), self._metodo
+                )
+            else:
+                esquema = controlador.esquema_division(
+                    self._texto_coef, self._tipo_divisor, self._params
+                )
+        except EntradaInvalida:
+            self.ruffini.limpiar("No se pudo dibujar el esquema.")
+            return
+        self.ruffini.mostrar(esquema)
+        self._pasos_esquema = esquema.get("pasos", [])
+        self._animar(self._pasos_esquema)
+
+    def _aplicar_paso(self, indice):
+        """Resalta la columna o fila del paso activo en la tabla de Ruffini."""
+        paso = None
+        if 0 <= indice < len(getattr(self, "_pasos_esquema", [])):
+            paso = self._pasos_esquema[indice]
+        self.ruffini.resaltar_paso(paso)
 
     def _mostrar_evaluacion(self, resultado):
         if "doble" in self._metodo.lower():
             p_alpha, dp_alpha = resultado.valor
             principal = f"P(α) = {formatear_fraccion(p_alpha)}"
             detalle = f"P'(α) = {formatear_fraccion(dp_alpha)} · Horner doble"
-            self._alpha_float = float(self._alpha)
-            self._p_alpha_float = float(p_alpha)
-            self._dp_alpha_float = float(dp_alpha)
         else:
             principal = f"P(α) = {formatear_fraccion(resultado.valor)}"
             if self._metodo.startswith("Directa"):
                 detalle = f"Evaluación directa · {len(resultado.pasos)} términos"
             else:
                 detalle = f"Horner · esquema de {len(self._coef)} coeficientes"
-            self._alpha_float = float(self._alpha)
-            self._p_alpha_float = float(resultado.valor)
-            self._dp_alpha_float = None
 
         self.resultado.mostrar(
             principal,
@@ -311,7 +340,6 @@ class PestanaEvaluarDividir(PestanaBase):
             self._referencia_polyval(),
             tono="verde",
         )
-        self._dibujar_evaluacion()
 
     def _referencia_polyval(self):
         try:
@@ -335,7 +363,6 @@ class PestanaEvaluarDividir(PestanaBase):
             "División exacta (Fraction) · P = divisor · C + R",
             tono="verde",
         )
-        self._dibujar_division()
 
     def _mensaje_exito(self, resultado):
         if self._modo == "Evaluar":
@@ -355,72 +382,6 @@ class PestanaEvaluarDividir(PestanaBase):
             f"División por {self._divisor_texto}: cociente de grado "
             f"{cociente.grado}, resto {texto_resto}."
         )
-
-    # ------------------------------------------------------------------ gráfico
-    def _dibujar_evaluacion(self):
-        puntos = [self._alpha_float]
-        titulo = f"P(x) = {self._texto_coef.strip()[:42]}"
-        self.grafico.dibujar(self._coef, puntos=puntos, titulo=titulo)
-        ax = self.grafico.ax
-        ax.axvline(self._alpha_float, color="#9DB0A8", lw=0.9, ls=":", zorder=1)
-        self.grafico.punto(
-            self._alpha_float,
-            self._p_alpha_float,
-            etiqueta="(α, P(α))",
-            color=ORANGE,
-            ms=7,
-        )
-        if self._dp_alpha_float is not None:
-            x0, x1 = ax.get_xlim()
-            xs = [x0, x1]
-            ys = [
-                self._p_alpha_float + self._dp_alpha_float * (x - self._alpha_float)
-                for x in xs
-            ]
-            ax.plot(xs, ys, color=GREEN, lw=1.4, ls="--", label="Tangente en α", zorder=4)
-        self.grafico.finalizar(ubicacion="best")
-
-    def _dibujar_division(self):
-        puntos = []
-        if self._alpha is not None:
-            puntos.append(float(self._alpha))
-        reales = []
-        try:
-            raices = raices_referencia(self._divisor_coef)
-            reales = [
-                z.real
-                for z in raices
-                if abs(z.imag) < 1e-9 and abs(z.real) < 1e6
-            ]
-        except (TypeError, ValueError, ZeroDivisionError):
-            reales = []
-        puntos.extend(reales)
-
-        titulo = f"P(x) = {self._texto_coef.strip()[:38]}  ÷  {self._divisor_texto}"
-        self.grafico.dibujar(self._coef, puntos=puntos, titulo=titulo)
-        ax = self.grafico.ax
-        if self._alpha is not None:
-            ax.axvline(float(self._alpha), color="#9DB0A8", lw=0.9, ls=":", zorder=1)
-            self.grafico.punto(
-                float(self._alpha),
-                float(evaluar_curva(self._coef, [float(self._alpha)])[0]),
-                etiqueta="α",
-                color=ORANGE,
-                ms=6,
-            )
-        if reales:
-            ax.plot(
-                reales,
-                [0.0] * len(reales),
-                marker="x",
-                color=GREEN,
-                markersize=8,
-                markeredgewidth=1.8,
-                linestyle="none",
-                label="Raíz del divisor",
-                zorder=7,
-            )
-        self.grafico.finalizar(ubicacion="best")
 
     def _mostrar_pasos_error(self, pasos):
         self._configurar_columnas(self._modo, self._metodo, self._tipo_divisor)

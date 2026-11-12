@@ -3,7 +3,7 @@
 import tkinter as tk
 
 from gui import controlador
-from gui.estilo import CARD, MUTED
+from gui.estilo import CARD, MUTED, NAVY
 from gui.formato import formatear_cientifico, formatear_float
 from gui.graficos import GraficoBairstow, raices_referencia
 from gui.pestanas.base import PestanaBase
@@ -153,7 +153,8 @@ class PestanaBairstow(PestanaBase):
             self._referencia(),
             tono="amber" if resultado.avisos else "verde",
         )
-        self._dibujar(raices)
+        self._dibujar(raices, resultado.pasos)
+        self._animar([{"i": i} for i in range(len(resultado.pasos))])
 
     def _referencia(self):
         raices = raices_referencia(self._coef)
@@ -188,11 +189,151 @@ class PestanaBairstow(PestanaBase):
         )
 
     # ------------------------------------------------------------------ gráfico
-    def _dibujar(self, raices):
+    def _dibujar(self, raices, pasos):
+        """Prepara la curva, el plano complejo y los artistas de la animación."""
         if not raices:
             self.grafico.limpiar("No hay raíces para mostrar.")
+            self._pasos_bairstow = []
+            self._grupos_raices = []
             return
-        self.grafico.dibujar_raices(self._coef, raices)
+
+        self._pasos_bairstow = list(pasos or [])
+        # Si no hay iteraciones (grado 0/1/2) las raíces se muestran completas.
+        self.grafico.dibujar_raices(
+            self._coef, raices, mostrar=not self._pasos_bairstow
+        )
+        ax2 = self.grafico.ax2
+
+        # Rombos huecos: raíces del factor con el (r, s) de la iteración actual.
+        self._prueba_raices = [
+            ax2.plot(
+                [],
+                [],
+                marker="D",
+                color=NAVY,
+                markerfacecolor="none",
+                markeredgewidth=1.1,
+                markersize=7,
+                linestyle="none",
+                visible=False,
+                zorder=8,
+            )[0]
+            for _ in range(2)
+        ]
+        self._estela_factor = ax2.plot(
+            [],
+            [],
+            color=NAVY,
+            lw=0.9,
+            ls=":",
+            alpha=0.7,
+            visible=False,
+            zorder=4,
+        )[0]
+        self._texto_rs = ax2.text(
+            0.02,
+            0.98,
+            "",
+            transform=ax2.transAxes,
+            ha="left",
+            va="top",
+            fontsize=7,
+            color=NAVY,
+            zorder=10,
+        )
+        self._factor_actual = None
+        self._grupos_raices = []
+        if not self._pasos_bairstow:
+            return
+
+        # Raíces en 0 extraídas antes de iterar: se revelan desde el inicio.
+        n_cero = self._raices_en_cero()
+        offset = 0
+        if n_cero:
+            grupo = list(range(0, min(n_cero, len(raices))))
+            self._grupos_raices.append((-1, grupo))
+            offset = len(grupo)
+
+        # Cada factor aporta dos raíces cuando termina su refinamiento.
+        ultimo_paso = {}
+        for i, paso in enumerate(self._pasos_bairstow):
+            ultimo_paso[paso.get("factor")] = i
+        for factor in sorted(ultimo_paso, key=lambda f: (f is None, f)):
+            grupo = list(range(offset, min(offset + 2, len(raices))))
+            if not grupo:
+                break
+            self._grupos_raices.append((ultimo_paso[factor], grupo))
+            offset += len(grupo)
+
+        # Lo que queda al final (cuadrática o lineal) se revela en el último paso.
+        if offset < len(raices):
+            self._grupos_raices.append(
+                (len(self._pasos_bairstow) - 1, list(range(offset, len(raices))))
+            )
+
+    def _raices_en_cero(self):
+        """Cantidad de factores x que el núcleo extrae antes de Bairstow."""
+        coef = list(self._coef)
+        cantidad = 0
+        while len(coef) > 1 and coef[0] == 0:
+            coef.pop(0)
+            cantidad += 1
+        return cantidad
+
+    def _aplicar_paso(self, indice):
+        """Revela las raíces de los factores ya resueltos y mueve (r, s)."""
+        super()._aplicar_paso(indice)
+        if not getattr(self, "_pasos_bairstow", []):
+            return
+
+        visibles = set()
+        if indice >= 0:
+            for fin, grupo in self._grupos_raices:
+                if fin <= indice:
+                    visibles.update(grupo)
+        for i, artistas in enumerate(
+            getattr(self.grafico, "artistas_raices", [])
+        ):
+            visible = i in visibles
+            for artista in artistas:
+                artista.set_visible(visible)
+
+        for artista in getattr(self, "_prueba_raices", []):
+            artista.set_visible(False)
+        self._estela_factor.set_visible(False)
+        self._texto_rs.set_text("")
+
+        if indice < 0 or indice >= len(self._pasos_bairstow):
+            self.grafico.redibujar()
+            return
+
+        paso = self._pasos_bairstow[indice]
+        actuales = list(paso.get("raices_actuales") or ())
+        for artista, z in zip(self._prueba_raices, actuales):
+            artista.set_data([z.real], [z.imag])
+            artista.set_visible(True)
+
+        factor = paso.get("factor")
+        estela_x = []
+        estela_y = []
+        for anterior in self._pasos_bairstow[: indice + 1]:
+            if anterior.get("factor") != factor:
+                continue
+            raices_j = list(anterior.get("raices_actuales") or ())
+            if raices_j:
+                estela_x.append(raices_j[0].real)
+                estela_y.append(raices_j[0].imag)
+        if len(estela_x) > 1:
+            self._estela_factor.set_data(estela_x, estela_y)
+            self._estela_factor.set_visible(True)
+
+        nota = " · perturbado" if paso.get("perturbado") else ""
+        self._texto_rs.set_text(
+            f"Factor {factor} · iter {paso.get('iter', '')}\n"
+            f"r = {formatear_float(paso.get('r'))} · "
+            f"s = {formatear_float(paso.get('s'))}{nota}"
+        )
+        self.grafico.redibujar()
 
     def _mostrar_pasos_error(self, pasos):
         self._configurar_columnas()

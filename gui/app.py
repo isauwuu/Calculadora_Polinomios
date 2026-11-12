@@ -147,6 +147,7 @@ class App(tk.Tk):
             self.tabbar.select(indice, fire=False)
             return
         if self._pagina_actual is not None:
+            self._pagina_actual.al_ocultar()
             self._pagina_actual.grid_remove()
         pagina.grid(row=0, column=0, sticky="nsew")
         pagina.tkraise()

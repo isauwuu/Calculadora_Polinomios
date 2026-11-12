@@ -3,7 +3,7 @@
 import tkinter as tk
 
 from gui import controlador
-from gui.estilo import AMBER_L, CARD, GREEN_L, MUTED
+from gui.estilo import AMBER_L, CARD, GREEN_L, MUTED, NAVY
 from gui.formato import formatear_fraccion
 from gui.graficos import texto_referencia
 from gui.pestanas.base import PestanaBase
@@ -125,7 +125,11 @@ class PestanaCotas(PestanaBase):
             texto_referencia(self._coef),
             tono=tono,
         )
-        self._dibujar(ajustado)
+        self._dibujar(ajustado, valor)
+        self._animar(
+            [{"metodo": i} for i in range(len(self.METODOS))]
+            + [{"ajustado": True}]
+        )
 
     def _intervalo(self, a, b):
         return f"[{formatear_fraccion(a)}, {formatear_fraccion(b)}]"
@@ -148,7 +152,8 @@ class PestanaCotas(PestanaBase):
         )
 
     # ------------------------------------------------------------------ gráfico
-    def _dibujar(self, ajustado):
+    def _dibujar(self, ajustado, valor):
+        """Dibuja la curva y prepara las bandas de cada método."""
         puntos = []
         if not ajustado["sin_raices"]:
             for intervalo in (ajustado["neg"], ajustado["pos"]):
@@ -160,20 +165,96 @@ class PestanaCotas(PestanaBase):
         titulo = f"P(x) = {self._texto_coef.strip()[:42]}"
         self.grafico.dibujar(self._coef, puntos=puntos, titulo=titulo)
         ax = self.grafico.ax
+        self._bandas_metodo = []
 
+        for clave, _nombre in self.METODOS:
+            cotas = valor.get(clave, {})
+            bandas = []
+            sup_pos = cotas.get("sup_pos", 0)
+            inf_pos = cotas.get("inf_pos", 0)
+            inf_neg = cotas.get("inf_neg", 0)
+            sup_neg = cotas.get("sup_neg", 0)
+
+            if sup_pos > 0:
+                a, b = float(inf_pos), float(sup_pos)
+                if b > a:
+                    bandas.append(
+                        ax.axvspan(
+                            a,
+                            b,
+                            color=GREEN_L,
+                            alpha=0.55,
+                            visible=False,
+                            zorder=1,
+                        )
+                    )
+            if inf_neg < 0:
+                a, b = float(inf_neg), float(sup_neg)
+                if b > a:
+                    bandas.append(
+                        ax.axvspan(
+                            a,
+                            b,
+                            color=AMBER_L,
+                            alpha=0.55,
+                            visible=False,
+                            zorder=1,
+                        )
+                    )
+            self._bandas_metodo.append(bandas)
+
+        self._bandas_ajustadas = []
         if not ajustado["sin_raices"]:
-            bandas = (
-                (ajustado["neg"], AMBER_L, "Cotas negativas"),
-                (ajustado["pos"], GREEN_L, "Cotas positivas"),
-            )
-            for intervalo, color, etiqueta in bandas:
+            for intervalo, color in (
+                (ajustado["neg"], AMBER_L),
+                (ajustado["pos"], GREEN_L),
+            ):
                 if not intervalo:
                     continue
                 a, b = (float(x) for x in intervalo)
-                ax.axvspan(a, b, color=color, alpha=0.85, label=etiqueta, zorder=1)
+                self._bandas_ajustadas.append(
+                    ax.axvspan(
+                        a,
+                        b,
+                        color=color,
+                        alpha=0.9,
+                        visible=False,
+                        zorder=1,
+                    )
+                )
                 for x in (a, b):
-                    ax.axvline(x, color=MUTED, lw=0.8, ls=":", zorder=2)
+                    self._bandas_ajustadas.append(
+                        ax.axvline(
+                            x,
+                            color=NAVY,
+                            lw=0.9,
+                            ls=":",
+                            visible=False,
+                            zorder=3,
+                        )
+                    )
         elif ajustado["cero_es_raiz"]:
             self.grafico.raiz(0.0, etiqueta="Raíz 0")
 
+        # Leyenda mínima: el color ya está explicado en la tarjeta.
+        ax.plot([], [], color=GREEN_L, lw=8, label="Cotas positivas")
+        ax.plot([], [], color=AMBER_L, lw=8, label="Cotas negativas")
         self.grafico.finalizar(ubicacion="best")
+
+    def _aplicar_paso(self, indice):
+        """Muestra una banda por método y, al final, la ajustada."""
+        if indice < len(self.METODOS):
+            self.tabla.seleccionar(indice)
+            for i, bandas in enumerate(getattr(self, "_bandas_metodo", [])):
+                for banda in bandas:
+                    banda.set_visible(i <= indice)
+            for banda in getattr(self, "_bandas_ajustadas", []):
+                banda.set_visible(False)
+        else:
+            self.tabla.seleccionar(len(self.METODOS) - 1)
+            for bandas in getattr(self, "_bandas_metodo", []):
+                for banda in bandas:
+                    banda.set_visible(False)
+            for banda in getattr(self, "_bandas_ajustadas", []):
+                banda.set_visible(True)
+        self.grafico.redibujar()
