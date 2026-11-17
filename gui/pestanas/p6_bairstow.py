@@ -111,9 +111,9 @@ class PestanaBairstow(PestanaBase):
         self.tabla.configurar(
             [
                 ("factor", "Factor", 64, "center"),
-                ("iter", "Iter", 46, "center"),
-                ("r", "r", 88, "center"),
-                ("s", "s", 88, "center"),
+                ("iter", "Iteración i", 70, "center"),
+                ("r", "rᵢ", 88, "center"),
+                ("s", "sᵢ", 88, "center"),
                 ("raices", "Raíces", 136, "w"),
             ],
             estirar=True,
@@ -144,8 +144,6 @@ class PestanaBairstow(PestanaBase):
                 }
             )
 
-        # Raíces que no salieron de una iteración (en cero, lineal o el
-        # cuadrático final, resuelto directamente con la fórmula).
         if raices:
             cubiertas = sum(len(p.get("raices_factor", ())) for p in pasos)
             restantes = list(raices)[self._raices_en_cero() + cubiertas:]
@@ -177,7 +175,6 @@ class PestanaBairstow(PestanaBase):
             else:
                 etiquetas.append(())
 
-        # Fila extra de raíces resueltas directamente
         while len(etiquetas) < len(filas):
             etiquetas.append(("final",))
         return etiquetas
@@ -205,7 +202,6 @@ class PestanaBairstow(PestanaBase):
         elif len(principal) <= 70:
             fuente = self.fuentes.h2
         else:
-            # Listas de muchas raíces: 15 px en negrita ocupa menos alto.
             fuente = self.fuentes.bold
         self.resultado.lbl_principal.configure(font=fuente)
         self.resultado.mostrar(
@@ -255,14 +251,16 @@ class PestanaBairstow(PestanaBase):
         ax2 = self.grafico.ax2
 
         if ax2 is not None:
-            self._prueba_raices = [
-                ax2.plot(
-                    [], [], marker="D", color=NAVY, markerfacecolor="none",
+            self._prueba_raices = []
+            for k in range(2):
+                linea = ax2.plot(
+                    [], [], marker="D", color=NAVY, markerfacecolor=NAVY,
                     markeredgewidth=1.1, markersize=7, linestyle="none",
-                    label="Raíz del factor (iteración)" if k == 0 else None,
-                    visible=False, zorder=8
-                )[0] for k in range(2)
-            ]
+                    zorder=8
+                )[0]
+                linea.set_visible(False)
+                self._prueba_raices.append(linea)
+
             self._estela_factor = [
                 ax2.plot(
                     [], [], color=NAVY, lw=0.9, ls=":", alpha=0.7,
@@ -340,8 +338,6 @@ class PestanaBairstow(PestanaBase):
         paso = self._pasos_bairstow[indice]
         factor = paso.get("factor")
 
-        # En la última iteración del factor sus raíces finales ya se dibujan
-        # como puntos fijos: los rombos de prueba las taparían.
         if indice == getattr(self, "_ultimo_por_factor", {}).get(factor):
             self.grafico.redibujar()
             return

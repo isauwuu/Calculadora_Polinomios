@@ -1,55 +1,39 @@
-"""Dibujo de tablas de Ruffini y esquemas de pasos en la tarjeta derecha."""
+"""Dibujo de esquemas de Horner/Ruffini y división larga sobre un Canvas."""
 
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import ttk
+import traceback
 
-from gui.estilo import (
-    AMBER_L, CARD, INK, LINE, MUTED, NAVY, ORANGE, PLOT, RED,
-    RUFFINI_BAND, RUFFINI_BOX, RUFFINI_LINE, RUFFINI_PRODUCT,
-)
+from gui import imagenes
+from gui.estilo import CARD, INK, MUTED, NAVY, ORANGE, GREEN, GREEN_L, LINE, AMBER
+from gui.esquema import poly_texto, termino
 
-class _DatosCelda:
-    __slots__ = ("rect", "texto", "fila", "columna", "base_fill", "base_outline", "calculo")
-    def __init__(self, rect, texto, fila, columna, base_fill, base_outline, calculo):
-        self.rect = rect
-        self.texto = texto
-        self.fila = fila
-        self.columna = columna
-        self.base_fill = base_fill
-        self.base_outline = base_outline
-        self.calculo = calculo
+VERDE_FONDO = "#F4FBF7"
+VERDE_BORDE = "#CFDAD4"
+VERDE_TEXTO = INK
+MORADO = MUTED
 
-
-def _crear_rect_redondeado(canvas, x1, y1, x2, y2, r, **kwargs):
-    """Dibuja un rectángulo redondeado usando un polígono suavizado."""
-    points = [
-        x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r,
-        x2, y2 - r, x2, y2, x2 - r, y2, x1 + r, y2,
-        x1, y2, x1, y2 - r, x1, y1 + r, x1, y1
-    ]
-    return canvas.create_polygon(points, smooth=True, **kwargs)
+COLOR = {"p": INK, "d": MUTED, "q": NAVY, "r": AMBER, "t": INK}
+TINTE = {"p": VERDE_FONDO, "q": "#E8F0F8", "r": "#FFF8ED"}
 
 
 class TablaEsquema(tk.Frame):
-    ALTO_FILA = 44
-    ALTO_FILA_TABLA = 34
-    ALTO_TITULO = 30
-    ALTO_CABECERA = 28
-    ALTO_ENCABEZADO = 32
-    ALTO_NOTA = 34
-    MARGEN = 22
-    SEPARACION_SECCIONES = 18
+    ANCHO_CELDA = 60
+    ALTO_FILA = 36
+    ANCHO_ETIQUETA = 60
+    MARGEN = 24
+    ESCALA_MAX = 1.8
+    ESCALA_MIN = 1.0
 
     def __init__(self, master, fuentes, bg=CARD):
         super().__init__(master, bg=bg)
         self.fuentes = fuentes
         self.bg = bg
-        self._esquema = None
-        self._paso_activo = None
-        self._celdas = {}
-        self._item_celda = {}
-        self._mensaje = ""
-        self._zoom = 1.0
+        self._esquemas = None
+        self._mensaje = "Ingresá los datos y presioná Calcular."
+        self._cache = {}
+        self._cache_cabecera = []
 
         self.canvas = tk.Canvas(self, bg=bg, highlightthickness=0, bd=0)
         self.yscroll = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
@@ -61,340 +45,373 @@ class TablaEsquema(tk.Frame):
         self.rowconfigure(0, weight=1)
         self.columnconfigure(0, weight=1)
 
-        self.hover = tk.Label(self, text="", font=fuentes.small, bg=bg, fg=MUTED, anchor="w", justify="left", wraplength=330)
-        self.hover.grid(row=2, column=0, sticky="ew", pady=(3, 0))
-
         self.canvas.bind("<Configure>", lambda _: self._redibujar())
-        self.canvas.bind("<Motion>", self._al_mover)
-        self.canvas.bind("<Leave>", lambda _: self.hover.configure(text=""))
-        self.canvas.bind("<MouseWheel>", self._rueda)
-        self.canvas.bind("<Shift-MouseWheel>", self._rueda_horizontal)
+        self.canvas.bind("<MouseWheel>", lambda e: self.canvas.yview_scroll(-1 if e.delta > 0 else 1, "units"))
+        self.canvas.bind("<Shift-MouseWheel>", lambda e: self.canvas.xview_scroll(-1 if e.delta > 0 else 1, "units"))
 
-    def mostrar(self, esquema):
-        self._esquema = esquema or {}
-        self._paso_activo = None
-        self._mensaje = ""
-        self.hover.configure(text="")
+    # ------------------------------------------------------------------ API
+    def mostrar(self, esquemas):
+        self._esquemas = esquemas
         self._redibujar()
 
     def limpiar(self, mensaje="Ingresá los datos y presioná Calcular."):
-        self._esquema = None
-        self._paso_activo = None
+        self._esquemas = None
         self._mensaje = mensaje
-        self.hover.configure(text="")
-        self._dibujar_mensaje()
-
-    def resaltar_paso(self, paso):
-        self._paso_activo = paso
-        self._aplicar_resaltado()
-
-    def redibujar(self):
         self._redibujar()
 
     def cerrar(self):
-        try: self.canvas.destroy()
-        except tk.TclError: pass
+        try:
+            self.canvas.destroy()
+        except tk.TclError:
+            pass
 
-    def _fuente_escalada(self, fuente):
-        if self._zoom == 1.0: return fuente
-        f = fuente.copy()
-        f.configure(size=int(f.cget("size") * self._zoom))
+    # ------------------------------------------------------------ utilidades
+    def _f(self, nombre, s=1.0):
+        clave = (nombre, round(s, 1))
+        f = self._cache.get(clave)
+        if f is None:
+            f = tkfont.Font(root=self, font=getattr(self.fuentes, nombre))
+            tam = f.actual("size")
+            nuevo = int(round(tam * clave[1]))
+            f.configure(size=nuevo if nuevo else (1 if tam > 0 else -1))
+            self._cache[clave] = f
         return f
 
+    @staticmethod
+    def _medir(f, texto):
+        return f.measure(texto)
+
+    @staticmethod
+    def _h(f):
+        return f.metrics("linespace")
+
+    def _escala(self, total_base, ancho_disp, tope):
+        s = (ancho_disp - 2 * self.MARGEN) / max(total_base, 1)
+        s = max(self.ESCALA_MIN, min(tope, s))
+        return int(s * 10) / 10
+
+    # --------------------------------------------------------------- dibujo
     def _redibujar(self):
-        if not self._esquema:
-            if self._mensaje: self._dibujar_mensaje()
+        c = self.canvas
+        c.delete("all")
+        self._cache_cabecera.clear()
+
+        self.canvas.xview_moveto(0)
+        self.canvas.yview_moveto(0)
+
+        ancho = max(c.winfo_width(), 320)
+
+        if not self._esquemas:
+            alto = max(c.winfo_height(), 240)
+            self.yscroll.grid_remove()
+            self.xscroll.grid_remove()
+            c.configure(scrollregion=(0, 0, ancho, alto))
+            c.create_text(ancho / 2, alto / 2, text=self._mensaje, font=self.fuentes.small,
+                          fill=MUTED, justify="center", width=max(ancho - 90, 220))
             return
 
-        self.canvas.delete("all")
-        self._celdas.clear()
-        self._item_celda.clear()
-        ancho = max(self.canvas.winfo_width(), 320)
-        self._zoom = max(1.0, min(ancho / 750, 1.6))
-        y = self.MARGEN
-
-        for s, seccion in enumerate(self._esquema.get("secciones", [])):
-            y = self._dibujar_seccion(s, seccion, y, ancho)
-
-        bbox = self.canvas.bbox("all")
-        if bbox is None: bbox = (0, 0, ancho, y)
-        bbox = (bbox[0], bbox[1], bbox[2], bbox[3] + self.MARGEN)
-        self._ajustar_scrollbars(bbox, ancho)
-        self.canvas.configure(scrollregion=bbox)
-        self._aplicar_resaltado()
-
-    def _dibujar_mensaje(self):
-        self.canvas.delete("all")
-        self._celdas.clear()
-        self._item_celda.clear()
-        self.yscroll.grid_remove()
-        self.xscroll.grid_remove()
-        ancho = max(self.canvas.winfo_width(), 320)
-        alto = max(self.canvas.winfo_height(), 240)
-        self.canvas.configure(scrollregion=(0, 0, ancho, alto))
-        self.canvas.create_text(ancho / 2, alto / 2, text=self._mensaje, anchor="center", justify="center", font=self._fuente_escalada(self.fuentes.math_small), fill=MUTED, width=max(ancho - 90, 220))
-
-    def _ajustar_scrollbars(self, bbox, ancho):
-        alto = max(self.canvas.winfo_height(), 1)
-        self.yscroll.grid() if (bbox[3] - bbox[1]) > alto else self.yscroll.grid_remove()
-        self.xscroll.grid() if (bbox[2] - bbox[0]) > ancho else self.xscroll.grid_remove()
-
-    def _dibujar_seccion(self, s, seccion, y, ancho):
-        if seccion.get("estilo") == "ruffini":
-            return self._dibujar_ruffini(s, seccion, y, ancho)
-        return self._dibujar_tabla(s, seccion, y, ancho)
-
-    # ------------------------------------------------------------------ Ruffini
-    def _anchos_ruffini(self, seccion):
-        filas = seccion.get("filas", [])
-        cantidad = max([len(fila.get("valores", [])) for fila in filas] + [1])
-        etiquetas = [fila.get("valores", [""])[0] for fila in filas]
-        ancho_etq = max([self.fuentes.math_label.measure(str(t)) for t in etiquetas] + [40]) + 24
-        anchos = [max(int(66 * self._zoom), int(ancho_etq))]
-        cabecera = seccion.get("cabecera") or []
-        for c in range(1, cantidad):
-            textos = []
-            for fila in filas:
-                valores = fila.get("valores", [])
-                if c < len(valores): textos.append(str(valores[c]))
-            if c - 1 < len(cabecera): textos.append(str(cabecera[c - 1]).replace("_", ""))
-            ancho = max([self.fuentes.math.measure(t) for t in textos] + [28]) + 28
-            anchos.append(max(int(56 * self._zoom), int(ancho)))
-        return anchos
-
-    def _x_centrada(self, ancho_total, ancho_disponible):
-        if ancho_total + 2 * self.MARGEN <= ancho_disponible:
-            return (ancho_disponible - ancho_total) / 2
-        return self.MARGEN
-
-    def _dibujar_ruffini(self, s, seccion, y, ancho_disponible):
-        filas = seccion.get("filas", [])
-        if not filas: return y
-        anchos = self._anchos_ruffini(seccion)
-        ancho_total = sum(anchos)
-        x_tabla = self._x_centrada(ancho_total, ancho_disponible)
-        x_coefs = x_tabla + anchos[0]
-        ancho_coefs = ancho_total - anchos[0]
-
-        titulo = seccion.get("titulo")
-        if titulo:
-            self.canvas.create_text(x_tabla, y, text=titulo, anchor="nw", font=self._fuente_escalada(self.fuentes.bold), fill=NAVY)
-            y += int(self.ALTO_TITULO * self._zoom)
-
-        cabecera = seccion.get("cabecera") or []
-        if cabecera:
-            xc = x_coefs
-            for c, texto in enumerate(cabecera):
-                if c + 1 < len(anchos):
-                    self._texto_cabecera(xc + anchos[c + 1] / 2, y + int(self.ALTO_CABECERA * self._zoom) / 2, texto)
-                    xc += anchos[c + 1]
-            y += int(self.ALTO_CABECERA * self._zoom)
-
-        y_tabla = y
-        alto_fila = int(self.ALTO_FILA * self._zoom)
-        alto_total = alto_fila * len(filas)
-        y_resultado = y_tabla + alto_fila * (len(filas) - 1)
-
-        if seccion.get("tipo") == "cuadratica":
-            self.canvas.create_rectangle(x_coefs, y_resultado, x_coefs + ancho_coefs, y_tabla + alto_total, fill=RUFFINI_BAND, outline="")
-
-        self._dibujar_caja_resto(seccion, x_tabla, y_tabla, anchos, alto_fila)
-
-        for r, fila in enumerate(filas):
-            valores = fila.get("valores", [])
-            calculos = fila.get("calculos", [])
-            tipo = fila.get("tipo", "normal")
-            x = x_tabla
-            for c in range(len(anchos)):
-                valor = valores[c] if c < len(valores) else ""
-                texto_valor = str(valor)
-                fuente = self._fuente_escalada(self._fuente_celda(r, c))
-                color = self._color_celda(r, c, tipo, texto_valor)
-
-                if texto_valor:
-                    # Dibujamos la "Pill" (Caja redondeada)
-                    x1 = x + 6
-                    y1 = y_tabla + r * alto_fila + 4
-                    x2 = x + anchos[c] - 6
-                    y2 = y_tabla + (r + 1) * alto_fila - 4
-
-                    fill_color = "#FFFFFF" if tipo == "suma" else ("#F0F4F8" if tipo == "producto" else "#FAFAFA")
-                    if tipo == "producto": fill_color = RUFFINI_BOX
-
-                    rect = _crear_rect_redondeado(self.canvas, x1, y1, x2, y2, r=12, fill=fill_color, outline=LINE, width=1)
-
-                    texto = self.canvas.create_text(x + anchos[c] / 2, y_tabla + r * alto_fila + alto_fila / 2, text=texto_valor, font=fuente, fill=color)
-
-                    # Flechitas para los productos
-                    if tipo == "producto" and texto_valor not in ("0", "−0", "-0"):
-                        self.canvas.create_text(x + anchos[c] - 10, y_tabla + r * alto_fila + 10, text="↘", font=("Arial", int(12 * self._zoom)), fill=MUTED)
-
-                    calculo = calculos[c] if c < len(calculos) else ""
-                    if not calculo and texto_valor: calculo = texto_valor
-                    dato = _DatosCelda(rect, texto, r, c, "", "", calculo)
-                    self._celdas[(s, r, c)] = dato
-                    self._item_celda[rect] = dato
-                    self._item_celda[texto] = dato
+        try:
+            y = self.MARGEN
+            for esq in self._esquemas:
+                tipo = esq.get("tipo")
+                if tipo == "larga":
+                    y = self._dibujar_larga(esq, y, ancho)
+                elif tipo == "resumen":
+                    y = self._dibujar_resumen(esq, y, ancho)
                 else:
-                    # Dibujar cruces rojas
-                    es_cruz = False
-                    if seccion.get("tipo") == "cuadratica":
-                        if r == 1 and (c == 1 or c == len(anchos) - 1): es_cruz = True
-                        elif r == 2 and (c == 1 or c == 2): es_cruz = True
+                    y = self._dibujar_matricial(esq, y, ancho)
 
-                    if es_cruz:
-                        self.canvas.create_text(x + anchos[c] / 2, y_tabla + r * alto_fila + alto_fila / 2, text="✕", font=self._fuente_escalada(self.fuentes.math_bold), fill=RED)
-                    rect_vacio = self.canvas.create_rectangle(x, y_tabla + r * alto_fila, x + anchos[c], y_tabla + (r+1)*alto_fila, fill="", outline="")
-                    dato = _DatosCelda(rect_vacio, 0, r, c, "", "", "")
-                    self._celdas[(s, r, c)] = dato
-                    self._item_celda[rect_vacio] = dato
-                x += anchos[c]
+            bbox = c.bbox("all")
+            if bbox:
+                x0, y0, x1, y1 = bbox
+                region = (min(x0, 0), 0, max(x1 + self.MARGEN, ancho), y1 + self.MARGEN)
+                c.configure(scrollregion=region)
+                if region[3] > c.winfo_height(): self.yscroll.grid()
+                else: self.yscroll.grid_remove()
+                if region[2] > ancho: self.xscroll.grid()
+                else: self.xscroll.grid_remove()
+            else:
+                c.configure(scrollregion=(0, 0, ancho, max(c.winfo_height(), 240)))
+                self.yscroll.grid_remove()
+                self.xscroll.grid_remove()
+        except Exception as e:
+            traceback.print_exc()
+            c.delete("all")
+            c.configure(scrollregion=(0, 0, ancho, 240))
+            c.create_text(ancho/2, 100, text=f"Error al dibujar el esquema:\n{e}",
+                          fill="red", font=self.fuentes.normal, justify="center", width=ancho-40)
 
-        y = y_tabla + alto_total
-        nota = seccion.get("nota")
-        if nota:
-            self.canvas.create_text(x_tabla, y + 8, text=nota, anchor="nw", font=self._fuente_escalada(self.fuentes.small), fill=MUTED, width=max(ancho_disponible - x_tabla - self.MARGEN, 260))
-            y += int(self.ALTO_NOTA * self._zoom)
-        return y + self.SEPARACION_SECCIONES
+    # ---- bloques comunes ---------------------------------------------------
+    def _titulo(self, texto, x, y, ancho_disp, s):
+        f = self._f("bold", min(s, 1.2))
+        item = self.canvas.create_text(x, y, text=texto, anchor="nw", font=f, fill=NAVY,
+                                       width=max(ancho_disp - 2 * self.MARGEN, 260))
+        return self.canvas.bbox(item)[3] + 12
 
-    def _dibujar_caja_resto(self, seccion, x_tabla, y_tabla, anchos, alto_fila):
-        resto = [tuple(pos) for pos in seccion.get("resto", [])]
-        if not resto: return
-        filas = [r for r, _ in resto]
-        columnas = [c for _, c in resto]
-        r0, r1 = min(filas), max(filas)
-        c0, c1 = min(columnas), max(columnas)
-        x1 = x_tabla + sum(anchos[:c0])
-        x2 = x1 + sum(anchos[c0 : c1 + 1])
-        y1 = y_tabla + r0 * alto_fila
-        y2 = y_tabla + (r1 + 1) * alto_fila
-        pad = 4
-        self.canvas.create_rectangle(x1 + pad, y1 + pad, x2 - pad, y2 - pad, fill=RUFFINI_BOX, outline=RUFFINI_LINE, width=1)
+    def _dibujar_cabecera(self, cab, y, ancho_disp, s):
+        s2 = min(s, 1.2)
+        fx = self._f("bold", s2)
+        pad = 12 * s2
+        icon_size = max(1, int(18 * s2))
 
-    def _texto_cabecera(self, x, y, texto):
-        base, _, sub = str(texto).partition("_")
-        f_base = self._fuente_escalada(self.fuentes.math_small)
-        f_sub = self._fuente_escalada(self.fuentes.math_sub)
-        ancho_base = f_base.measure(base)
-        ancho_sub = f_sub.measure(sub) if sub else 0
-        inicio = x - (ancho_base + ancho_sub) / 2
-        self.canvas.create_text(inicio, y, text=base, anchor="w", font=f_base, fill=MUTED)
-        if sub: self.canvas.create_text(inicio + ancho_base, y + 4, text=sub, anchor="w", font=f_sub, fill=MUTED)
+        icon = imagenes.photo(imagenes.icon_image("check", icon_size, GREEN))
+        self._cache_cabecera.append(icon)
+        icon_w = icon.width()
 
-    def _fuente_celda(self, fila, columna):
-        # Usamos la fuente normal de la app en vez de la matemática serif
-        if columna == 0:
-            return self.fuentes.bold if fila == 1 else self.fuentes.small
-        return self.fuentes.normal
+        cajas = []
+        for _, expr in cab:
+            w = self._medir(fx, expr) + icon_w + pad * 3
+            cajas.append((expr, w))
 
-    def _color_celda(self, fila, columna, tipo, valor):
-        if columna == 0: return PLOT if fila == 1 else MUTED
-        if tipo == "producto": return RUFFINI_PRODUCT
-        if valor.strip() in ("0", "−0", "-0"): return RED
-        return INK
+        alto = self._h(fx) + 16 * s2
+        gap = 12
+        disp = ancho_disp - 2 * self.MARGEN
+        total = sum(w for _, w in cajas) + gap * (len(cajas) - 1)
 
-    # ------------------------------------------------------------------ tablas
-    def _anchos_tabla(self, seccion):
-        columnas = seccion.get("columnas") or []
-        filas = seccion.get("filas", [])
-        cantidad = max([len(columnas)] + [len(fila.get("valores", [])) for fila in filas] + [1])
-        anchos = []
-        for c in range(cantidad):
-            textos = []
-            if c < len(columnas): textos.append(str(columnas[c]))
-            for fila in filas:
-                valores = fila.get("valores", [])
-                if c < len(valores): textos.append(str(valores[c]))
-            ancho = max([self.fuentes.math_small.measure(t) for t in textos] + [40]) + 28
-            anchos.append(max(int(64 * self._zoom), int(ancho * self._zoom)))
-        return anchos
+        if total <= disp:
+            x = (ancho_disp - total) / 2
+            for expr, w in cajas:
+                self._pintar_caja(x, y, w, alto, expr, fx, pad, icon, icon_w)
+                x += w + gap
+            return y + alto + 16
+        else:
+            for expr, w in cajas:
+                x = max((ancho_disp - w) / 2, self.MARGEN)
+                self._pintar_caja(x, y, w, alto, expr, fx, pad, icon, icon_w)
+                y += alto + 8
+            return y + 8
 
-    def _dibujar_tabla(self, s, seccion, y, ancho_disponible):
-        columnas = seccion.get("columnas") or []
-        filas = seccion.get("filas", [])
-        anchos = self._anchos_tabla(seccion)
-        ancho_total = sum(anchos)
-        x_tabla = self._x_centrada(ancho_total, ancho_disponible)
-        alto_fila = int(self.ALTO_FILA_TABLA * self._zoom)
-        alto_encabezado = int(self.ALTO_ENCABEZADO * self._zoom)
+    def _pintar_caja(self, x, y, w, alto, expr, fx, pad, icon, icon_w):
+        pil = imagenes.rounded_image(int(w), int(alto), 12, VERDE_FONDO, VERDE_BORDE, 1, 0, False, self.bg)
+        img = imagenes.photo(pil)
+        self._cache_cabecera.append(img)
+        self.canvas.create_image(x, y, image=img, anchor="nw")
 
-        titulo = seccion.get("titulo")
-        if titulo:
-            self.canvas.create_text(x_tabla, y, text=titulo, anchor="nw", font=self._fuente_escalada(self.fuentes.bold), fill=NAVY)
-            y += int(self.ALTO_TITULO * self._zoom)
+        self.canvas.create_image(x + pad, y + alto / 2, image=icon, anchor="w")
+        self.canvas.create_text(x + pad + icon_w + pad, y + alto / 2, text=expr, anchor="w", font=fx, fill=NAVY)
 
-        if columnas:
-            self.canvas.create_rectangle(x_tabla, y, x_tabla + ancho_total, y + alto_encabezado, fill=RUFFINI_BOX, outline="")
-            x = x_tabla
-            for c, titulo_col in enumerate(columnas):
-                self.canvas.create_text(x + anchos[c] / 2, y + alto_encabezado / 2, text=str(titulo_col), font=self._fuente_escalada(self.fuentes.math_small_bold), fill=NAVY)
-                x += anchos[c]
-            self.canvas.create_line(x_tabla, y + alto_encabezado, x_tabla + ancho_total, y + alto_encabezado, fill=RUFFINI_LINE, width=1)
-            y += alto_encabezado
+    def _dibujar_identidad(self, partes, y, ancho_disp, s):
+        s = min(s, 1.2)
+        disp = ancho_disp - 2 * self.MARGEN
+        while True:
+            f = self._f("bold", s)
+            total = sum(self._medir(f, t) for t, _ in partes)
+            if total <= disp or s <= 0.7:
+                break
+            s = round(s - 0.1, 1)
+        x = max((ancho_disp - total) / 2, self.MARGEN)
+        for texto, rol in partes:
+            self.canvas.create_text(x, y, text=texto, anchor="nw", font=f, fill=COLOR.get(rol, INK))
+            x += self._medir(f, texto)
+        return y + self._h(f) + 12
+
+    def _nota(self, texto, x, y, ancho_disp, s):
+        item = self.canvas.create_text(x, y, text=texto, anchor="nw", font=self._f("small", min(s, 1.1)),
+                                       fill=MUTED, width=max(ancho_disp - 2 * self.MARGEN, 260))
+        return self.canvas.bbox(item)[3] + 10
+
+    # ---- resumen (NUEVO FORMATO MATRIZ) ------------------------------------
+    def _dibujar_resumen(self, esq, y, ancho_disp):
+        c = self.canvas
+        fr = self._f("bold", 1.0)
+        fv = self._f("bold", 1.1)
+        pad = 12
+        gap_x = 16
+        gap_y = 8
+        items = esq["items"]
+        n = len(items)
+
+        if n == 0:
+            return y + 10
+
+        # Calcular el ancho máximo de una caja individual
+        w_box = max(self._medir(fr, r) + 16 + self._medir(fv, v) for r, v, _ in items) + 2 * pad + 10
+        alto = max(self._h(fr), self._h(fv)) + 18
+
+        # Lógica de columnas: 2 si hay más de 1, a menos que no entren en el ancho
+        cols = 2 if n >= 2 else 1
+        if cols == 2 and (2 * w_box + gap_x) > (ancho_disp - 2 * self.MARGEN):
+            cols = 1
+
+        rows = (n + cols - 1) // cols
+
+        # Calcular posición inicial para centrar la matriz completa
+        total_w = cols * w_box + (cols - 1) * gap_x
+        x_start = max((ancho_disp - total_w) / 2, self.MARGEN)
+        y_start = y
+
+        for i, (rotulo, valor, rol) in enumerate(items):
+            r = i // cols
+            c_idx = i % cols
+            x_curr = x_start + c_idx * (w_box + gap_x)
+            y_curr = y_start + r * (alto + gap_y)
+
+            col = COLOR[rol]
+            c.create_rectangle(x_curr, y_curr, x_curr + w_box, y_curr + alto, fill=TINTE.get(rol, CARD), outline=LINE, width=1)
+            c.create_rectangle(x_curr, y_curr, x_curr + 6, y_curr + alto, fill=col, outline=col)
+
+            y_mid = y_curr + alto / 2
+
+            c.create_text(x_curr + 6 + pad, y_mid, text=rotulo, anchor="w", font=fr, fill=MUTED)
+            c.create_text(x_curr + 6 + pad + self._medir(fr, rotulo) + 16, y_mid, text=valor,
+                          anchor="w", font=fv, fill=col)
+
+        y_fin = y_start + rows * alto + (rows - 1) * gap_y
+        return y_fin + 10
+
+    # ---- esquema matricial (Ruffini / Horner) ------------------------------
+    def _dibujar_matricial(self, esq, y, ancho_disp):
+        c = self.canvas
+        filas = esq["filas"]
+        ncol = max(len(f["celdas"]) for f in filas)
+        textos = [t for f in filas for t in f["celdas"] if t]
+        etqs = [f["etiqueta"] for f in filas if f["etiqueta"]]
+
+        f1 = self._f("bold", 1.0)
+        wc1 = max(self.ANCHO_CELDA, max((self._medir(f1, t) for t in textos), default=0) + 24)
+        we1 = max(self.ANCHO_ETIQUETA, max((self._medir(f1, t) for t in etqs), default=0) + 30)
+        s = self._escala(we1 + ncol * wc1, ancho_disp, self.ESCALA_MAX)
+
+        fn, fb, fs = self._f("normal", s), self._f("bold", s), self._f("small", s)
+        w = max(self.ANCHO_CELDA * s, max((self._medir(fb, t) for t in textos), default=0) + 24 * s)
+        we = max(self.ANCHO_ETIQUETA * s, max((self._medir(fn, t) for t in etqs), default=0) + 30 * s)
+        h = self.ALTO_FILA * s
+
+        ancho_total = we + ncol * w
+        x = max((ancho_disp - ancho_total) / 2, self.MARGEN)
+        xc = x + we
+
+        if esq.get("titulo"):
+            y = self._titulo(esq["titulo"], self.MARGEN, y, ancho_disp, s)
+        if esq.get("cabecera"):
+            y = self._dibujar_cabecera(esq["cabecera"], y, ancho_disp, s)
+
+        nf = len(filas)
+        c.create_line(xc, y, xc, y + nf * h, width=1, fill=MUTED)
+        if nf > 1:
+            yh = y + (nf - 1) * h
+            c.create_line(x, yh, xc + ncol * w, yh, width=1, fill=MUTED)
+
+        cociente = esq.get("cociente")
+        resto = esq.get("resto")
 
         for r, fila in enumerate(filas):
-            valores = fila.get("valores", [])
-            calculos = fila.get("calculos", [])
-            x = x_tabla
-            for c in range(len(anchos)):
-                valor = valores[c] if c < len(valores) else ""
-                texto_valor = str(valor)
-                rect = self.canvas.create_rectangle(x, y, x + anchos[c], y + alto_fila, fill="", outline="")
-                texto = self.canvas.create_text(x + anchos[c] / 2, y + alto_fila / 2, text=texto_valor, font=self._fuente_escalada(self.fuentes.math_small), fill=INK)
-                calculo = calculos[c] if c < len(calculos) else ""
-                if not calculo and texto_valor: calculo = texto_valor
-                dato = _DatosCelda(rect, texto, r, c, "", "", calculo)
-                self._celdas[(s, r, c)] = dato
-                self._item_celda[rect] = dato
-                self._item_celda[texto] = dato
-                x += anchos[c]
-            self.canvas.create_line(x_tabla, y + alto_fila, x_tabla + ancho_total, y + alto_fila, fill=LINE, width=1)
-            y += alto_fila
+            yc = y + r * h + h / 2
+            if fila["etiqueta"]:
+                c.create_text(xc - 14 * s, yc, text=fila["etiqueta"], anchor="e", font=fn, fill=MUTED)
+            for k, texto in enumerate(fila["celdas"]):
+                if texto == "":
+                    continue
+                xk = xc + k * w + w / 2
+                color, fuente = INK, fn
+                if fila["tipo"] == "producto":
+                    color = MUTED
+                elif fila["tipo"] == "resultado":
+                    fuente = fb
+                    color = AMBER if (resto and resto[0] <= k <= resto[1]) else NAVY
+                if texto.strip() == "0" and fila["tipo"] == "producto":
+                    color = MUTED
+                c.create_text(xk, yc, text=texto, font=fuente, fill=color)
 
-        nota = seccion.get("nota")
-        if nota:
-            self.canvas.create_text(x_tabla, y + 8, text=nota, anchor="nw", font=self._fuente_escalada(self.fuentes.small), fill=MUTED, width=max(ancho_disponible - x_tabla - self.MARGEN, 260))
-            y += int(self.ALTO_NOTA * self._zoom)
-        return y + self.SEPARACION_SECCIONES
+        y_fin = y + nf * h
 
-    # ------------------------------------------------------------------ resaltado
-    def _aplicar_resaltado(self):
-        for dato in self._celdas.values():
-            self.canvas.itemconfigure(dato.rect, fill=dato.base_fill, outline=dato.base_outline, width=1)
+        if resto:
+            x1 = xc + resto[0] * w + 4
+            x2 = xc + (resto[1] + 1) * w - 4
+            c.create_rectangle(x1, y_fin - h + 4, x2, y_fin - 4, outline=AMBER, width=1)
 
-        paso = self._paso_activo
-        if not paso: return
+        yl = y_fin + 6 * s
+        if cociente:
+            xa, xb = xc + cociente[0] * w + 6, xc + (cociente[1] + 1) * w - 6
+            c.create_line(xa, yl, xb, yl, fill=NAVY, width=1)
+            c.create_text((xa + xb) / 2, yl + 14 * s, text=esq.get("etq_c", "C(x)"), font=fs, fill=NAVY)
+        if resto:
+            xa, xb = xc + resto[0] * w + 6, xc + (resto[1] + 1) * w - 6
+            c.create_line(xa, yl, xb, yl, fill=AMBER, width=1)
+            c.create_text((xa + xb) / 2, yl + 14 * s, text=esq.get("etq_r", "R"), font=fs, fill=AMBER)
 
-        indice_seccion = paso.get("seccion", 0)
-        celdas = [dato for (s, _r, _c), dato in self._celdas.items() if s == indice_seccion]
-        objetivo = []
-        if "fila" in paso: objetivo = [d for d in celdas if d.fila == paso["fila"]]
-        else:
-            columnas = paso.get("columnas")
-            if columnas is None: columnas = [paso.get("columna")]
-            filas = paso.get("filas")
-            for dato in celdas:
-                if dato.columna in columnas and (filas is None or dato.fila in filas): objetivo.append(dato)
+        y = y_fin + 40 * s
+        if esq.get("identidad"):
+            y = self._dibujar_identidad(esq["identidad"], y, ancho_disp, s)
+        if esq.get("nota"):
+            y = self._nota(esq["nota"], self.MARGEN, y, ancho_disp, s)
+        return y + 14
 
-        for dato in objetivo:
-            self.canvas.itemconfigure(dato.rect, fill=AMBER_L, outline=ORANGE, width=2)
-            if isinstance(dato.texto, int): self.canvas.tag_raise(dato.texto)
+    # ---- división larga estándar ------------------------------------------------
+    def _dibujar_larga(self, esq, y, ancho_disp):
+        c = self.canvas
+        n = esq["n"]
+        d_txt = poly_texto(esq["divisor"])
+        q_txt = poly_texto(esq["cociente_coef"])
+        pasos = esq["pasos"]
 
-    # ------------------------------------------------------------------ interacción
-    def _al_mover(self, evento):
-        x = self.canvas.canvasx(evento.x)
-        y = self.canvas.canvasy(evento.y)
-        dato = None
-        for item in self.canvas.find_overlapping(x - 1, y - 1, x + 1, y + 1):
-            dato = self._item_celda.get(item)
-            if dato is not None: break
-        if dato is None or not dato.calculo: self.hover.configure(text="")
-        else: self.hover.configure(text=dato.calculo)
+        def ordenar(dct):
+            return sorted(dct.items(), reverse=True)
 
-    def _rueda(self, evento):
-        self.canvas.yview_scroll(-1 if evento.delta > 0 else 1, "units")
-        return "break"
+        filas = [("dividendo", ordenar(esq["dividendo"]), None)]
+        for i, p in enumerate(pasos):
+            final = i == len(pasos) - 1
+            filas.append(("prod", ordenar(p["prod"]), None))
+            filas.append(("final" if final else "resto", ordenar(p["resto"]), None))
 
-    def _rueda_horizontal(self, evento):
-        self.canvas.xview_scroll(-1 if evento.delta > 0 else 1, "units")
-        return "break"
+        textos = [termino(cf, e, primero=(k == 0)) for _, ts, _ in filas for k, (e, cf) in enumerate(ts)]
+        etiquetas = [e for _, _, e in filas if e]
+
+        def medir(s):
+            fb, fl = self._f("bold", s), self._f("normal", s)
+            cw = max(self._medir(fb, t) for t in textos + ["0"]) + 26 * s
+            gutter = max(self._medir(fl, t) for t in etiquetas) + 30 * s if etiquetas else 0
+            wdiv = max(self._medir(fb, d_txt), self._medir(fb, q_txt)) + 40 * s
+            return gutter + (n + 1) * cw + 16 * s + wdiv, cw, gutter, wdiv
+
+        s = 1.3
+        while s > 0.5 and medir(s)[0] + 2 * self.MARGEN > ancho_disp:
+            s = round(s - 0.1, 1)
+        total, cw, gutter, wdiv = medir(s)
+
+        fm, fb, fl = self._f("normal", s), self._f("bold", s), self._f("normal", s)
+
+        if esq.get("titulo"):
+            y = self._titulo(esq["titulo"], self.MARGEN, y, ancho_disp, s)
+        if esq.get("cabecera"):
+            y = self._dibujar_cabecera(esq["cabecera"], y, ancho_disp, s)
+
+        x_left = max((ancho_disp - total) / 2, self.MARGEN)
+        x0 = x_left + gutter
+        rh = self._h(fm) * 1.6
+
+        def xc(e):
+            return x0 + (n - e) * cw + cw / 2
+
+        x_div = x0 + (n + 1) * cw + 6 * s
+        c.create_line(x_div, y + 2, x_div, y + 2 * rh - 2, width=1, fill=MUTED)
+        c.create_line(x_div, y + rh, x_div + wdiv, y + rh, width=1, fill=MUTED)
+        c.create_text(x_div + 14 * s, y + rh / 2, text=d_txt, anchor="w", font=fb, fill=INK)
+        c.create_text(x_div + 14 * s, y + 1.5 * rh, text=q_txt, anchor="w", font=fb, fill=NAVY)
+
+        yy = y
+        for tipo, terminos, etq in filas:
+            cy = yy + rh / 2
+            for k, (e, cf) in enumerate(terminos):
+                color, fuente = INK, fm
+                if tipo in ("dividendo", "resto") and k == 0:
+                    color = MUTED
+                if tipo == "final":
+                    color, fuente = AMBER, fb
+                c.create_text(xc(e), cy, text=termino(cf, e, primero=(k == 0)), font=fuente, fill=color)
+            if tipo == "final" and not terminos:
+                c.create_text(xc(0), cy, text="0", font=fb, fill=AMBER)
+            if etq:
+                c.create_text(x0 - 10 * s, cy, text=etq, anchor="e", font=fl, fill=MORADO)
+            if tipo == "prod" and terminos:
+                xa = xc(terminos[0][0]) - cw / 2 + 6
+                xb = xc(terminos[-1][0]) + cw / 2 - 6
+                c.create_line(xa, yy + rh - 2, xb, yy + rh - 2, width=1, fill=MUTED)
+            yy += rh
+
+        y = yy + 14
+        if esq.get("identidad"):
+            y = self._dibujar_identidad(esq["identidad"], y, ancho_disp, s)
+        if esq.get("nota"):
+            y = self._nota(esq["nota"], self.MARGEN, y, ancho_disp, s)
+        return y + 14

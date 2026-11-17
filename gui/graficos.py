@@ -9,6 +9,7 @@ matplotlib.use("TkAgg")
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
+from matplotlib.lines import Line2D
 from matplotlib.ticker import MaxNLocator
 
 from gui.estilo import CARD, GREEN, INK, LINE, MUTED, ORANGE, PLOT
@@ -114,8 +115,6 @@ def dibujar_curva(ax, coeficientes, xlim=None, puntos=None, color=PLOT, etiqueta
     if xlim is None:
         xlim = rango_x(coeficientes, puntos or [])
 
-    # TRUCO: Calculamos la curva en un rango 2 veces más ancho para que
-    # al hacer zoom-out no se vea el "corte".
     span = xlim[1] - xlim[0]
     x_dibujo_min = xlim[0] - span * 2
     x_dibujo_max = xlim[1] + span * 2
@@ -124,12 +123,13 @@ def dibujar_curva(ax, coeficientes, xlim=None, puntos=None, color=PLOT, etiqueta
     ys = evaluar_curva(coeficientes, xs)
 
     ax.plot(xs, ys, color=color, lw=2.0, label=etiqueta, zorder=3)
-    ax.axhline(0, color=INK, lw=0.8, zorder=1)
 
-    # Mantenemos la vista inicial ajustada al rango original
+    # Marcamos ambos ejes (X e Y) con líneas oscuras
+    ax.axhline(0, color=INK, lw=1.0, zorder=1)
+    ax.axvline(0, color=INK, lw=1.0, zorder=1)
+
     ax.set_xlim(*xlim)
 
-    # Ajustamos el eje Y basándonos SOLO en lo que se ve en pantalla, no en todo
     ys_visibles = evaluar_curva(coeficientes, np.linspace(xlim[0], xlim[1], 500))
     _ajustar_y(ax, ys_visibles)
 
@@ -240,7 +240,7 @@ class GraficoSimple(tk.Frame):
         linea = ax.plot(
             [float(x)], [0.0],
             marker="o", color=GREEN,
-            markerfacecolor=GREEN,  # <--- ANTES DECÍA "none", PONÉ GREEN
+            markerfacecolor=GREEN,
             markeredgewidth=1.8, markersize=10,
             markeredgecolor=color,
             linestyle="none", label=etiqueta, zorder=6,
@@ -397,7 +397,6 @@ class GraficoSimple(tk.Frame):
 class GraficoBairstow(GraficoSimple):
     """Figura con P(x) en la recta real y, al costado, el plano complejo."""
 
-    # Ancho relativo de [curva, plano complejo] cuando hay raíces complejas.
     _ANCHOS = [1.5, 1.0]
 
     def __init__(self, master, pestana=None):
@@ -407,6 +406,8 @@ class GraficoBairstow(GraficoSimple):
         self._hover_art2 = None
         self._xlim_base2 = None
         self._ylim_base2 = None
+        self._handles_base_comp = []
+        self._labels_base_comp = []
         self.figura.clear()
         self.ax = self.figura.add_subplot(111)
         self.ax2 = None
@@ -433,6 +434,8 @@ class GraficoBairstow(GraficoSimple):
         self._xlim_base2 = None
         self._ylim_base2 = None
         self.artistas_raices = []
+        self._handles_base_comp = []
+        self._labels_base_comp = []
         self.canvas.draw_idle()
 
     def _anotacion(self, ax):
@@ -449,10 +452,18 @@ class GraficoBairstow(GraficoSimple):
         )
 
     def leyenda_plano(self):
-        """Leyenda del plano complejo, debajo del recuadro (no tapa puntos)."""
+        """Leyenda del plano complejo combinando los manuales con los extras."""
         if self.ax2 is None:
             return
-        handles, labels = self.ax2.get_legend_handles_labels()
+        handles = list(self._handles_base_comp)
+        labels = list(self._labels_base_comp)
+
+        extras_h, extras_l = self.ax2.get_legend_handles_labels()
+        for h, l in zip(extras_h, extras_l):
+            if l not in labels:
+                handles.append(h)
+                labels.append(l)
+
         if not handles:
             return
         self.ax2.legend(
@@ -470,7 +481,6 @@ class GraficoBairstow(GraficoSimple):
         reales = [z.real for z in raices if math.isclose(z.imag, 0.0, abs_tol=1e-9)]
         complejas = [z for z in raices if not math.isclose(z.imag, 0.0, abs_tol=1e-9)]
 
-        # 1. Ejes: dos columnas si hay complejas, uno solo si no.
         if complejas:
             gs = self.figura.add_gridspec(
                 1, 2, width_ratios=self._ANCHOS,
@@ -483,12 +493,20 @@ class GraficoBairstow(GraficoSimple):
             ax_comp = None
             self.figura.subplots_adjust(left=0.12, right=0.98, top=0.86, bottom=0.15)
 
-        # 2. Gráfico principal (función P(x))
         xlim = rango_x(coeficientes, reales)
         dibujar_curva(ax_real, coeficientes, xlim, reales, PLOT, "P(x)")
         estilizar(ax_real, "P(x) y raíces reales")
 
-        # 3. Plano complejo (Re / Im)
+        # Handles manuales para el gráfico principal
+        handles_real = [Line2D([0], [0], color=PLOT, lw=2.0)]
+        labels_real = ["P(x)"]
+        if reales:
+            handles_real.append(Line2D([0], [0], marker="o", color=GREEN, markerfacecolor=GREEN,
+                                       markeredgewidth=1.6, markersize=8, linestyle="none"))
+            labels_real.append("Raíces reales")
+
+        ax_real.legend(handles_real, labels_real, fontsize=9.5, frameon=False, loc="upper left")
+
         if ax_comp is not None:
             estilizar(ax_comp, "Plano complejo")
             ax_comp.axhline(0, color=INK, lw=0.6, zorder=1)
@@ -507,9 +525,22 @@ class GraficoBairstow(GraficoSimple):
             ax_comp.set_ylabel("Im", fontsize=9, color=MUTED, labelpad=4, rotation=0)
             self.ax2 = ax_comp
             self._hover_art2 = self._anotacion(ax_comp)
+
+            self._handles_base_comp = []
+            self._labels_base_comp = []
+            if reales:
+                self._handles_base_comp.append(Line2D([0], [0], marker="o", color=GREEN, markerfacecolor=GREEN,
+                                           markeredgewidth=1.5, markersize=6, linestyle="none"))
+                self._labels_base_comp.append("Reales")
+            if complejas:
+                self._handles_base_comp.append(Line2D([0], [0], marker="s", color=ORANGE, markerfacecolor=ORANGE,
+                                           markersize=6, linestyle="none"))
+                self._labels_base_comp.append("Complejas")
         else:
             self.ax2 = None
             self._hover_art2 = None
+            self._handles_base_comp = []
+            self._labels_base_comp = []
 
         self.ax = ax_real
         self._coef_actual = list(coeficientes)
@@ -518,52 +549,39 @@ class GraficoBairstow(GraficoSimple):
         self._hover_art = self._hover_art1
         self.artistas_raices = []
 
-        primera_real = True
-        primera_real_comp = True
-        primera_compleja = True
-
         for z in raices:
             artistas = []
             if math.isclose(z.imag, 0.0, abs_tol=1e-9):
-                # Raíz real: se dibuja en el gráfico grande
                 linea_real = ax_real.plot(
                     [z.real], [0.0],
                     marker="o", color=GREEN, markerfacecolor=GREEN,
                     markeredgewidth=1.6, markersize=8, linestyle="none",
-                    label="Raíces reales" if primera_real else None,
                     visible=mostrar, zorder=6,
                 )[0]
-                primera_real = False
                 artistas.append(linea_real)
                 self._puntos_hover.append((ax_real, z.real, 0.0, "Raíz real", linea_real))
 
                 if self.ax2 is not None:
                     linea_comp = self.ax2.plot(
                         [z.real], [0.0],
-                        marker="o", color=GREEN, markerfacecolor="none",
+                        marker="o", color=GREEN, markerfacecolor=GREEN,
                         markeredgewidth=1.5, markersize=6, linestyle="none",
-                        label="Reales" if primera_real_comp else None,
                         visible=mostrar, zorder=5,
                     )[0]
-                    primera_real_comp = False
                     artistas.append(linea_comp)
                     self._puntos_hover.append((self.ax2, z.real, 0.0, "Raíz real", linea_comp))
             else:
-                # Raíz compleja: solo en el plano complejo
-                linea_comp = self.ax2.plot(
-                    [z.real], [z.imag],
-                    marker="s", color=ORANGE, markerfacecolor=ORANGE,
-                    markersize=6, linestyle="none",
-                    label="Complejas" if primera_compleja else None,
-                    visible=mostrar, zorder=5,
-                )[0]
-                primera_compleja = False
-                artistas.append(linea_comp)
-                self._puntos_hover.append((self.ax2, z.real, z.imag, "Raíz compleja", linea_comp))
+                if self.ax2 is not None:
+                    linea_comp = self.ax2.plot(
+                        [z.real], [z.imag],
+                        marker="s", color=ORANGE, markerfacecolor=ORANGE,
+                        markersize=6, linestyle="none",
+                        visible=mostrar, zorder=5,
+                    )[0]
+                    artistas.append(linea_comp)
+                    self._puntos_hover.append((self.ax2, z.real, z.imag, "Raíz compleja", linea_comp))
             self.artistas_raices.append(artistas)
 
-        if reales:
-            ax_real.legend(fontsize=9.5, frameon=False, loc="upper left")
         self.leyenda_plano()
 
         self._xlim_base = ax_real.get_xlim()
