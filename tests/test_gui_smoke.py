@@ -28,13 +28,25 @@ def app():
 
 
 def _revisar(pagina, ventana):
-    ventana.update_idletasks()
+    ventana.update()
     assert pagina.tabla.filas() > 0
     total = pagina.barra.controlador.total
     assert total > 0
     for indice in (0, total // 2, total - 1):
         pagina._aplicar_paso(indice)
-    ventana.update_idletasks()
+    ventana.update()
+    # Simula elegir un paso como si se hubiera hecho clic en la tabla: antes
+    # esto realimentaba la animación y congelaba la ventana.
+    pagina._elegir_paso(0)
+    ventana.update()
+
+
+def _revisar_ruffini(pagina, ventana):
+    """La pestaña 1 ya no tiene tabla de pasos: solo el esquema de Ruffini."""
+    ventana.update()
+    assert pagina.tabla is None
+    assert pagina.barra is None
+    assert pagina.ruffini._esquema["secciones"]
 
 
 def test_smoke_pestana_1_todos_los_esquemas(app):
@@ -45,7 +57,7 @@ def test_smoke_pestana_1_todos_los_esquemas(app):
         pagina.v_modo.set("Evaluar")
         pagina.v_metodo.set(metodo)
         pagina.calcular()
-        _revisar(pagina, app)
+        _revisar_ruffini(pagina, app)
 
     pagina.v_modo.set("Dividir")
     ejemplos = [
@@ -59,7 +71,7 @@ def test_smoke_pestana_1_todos_los_esquemas(app):
         pagina.v_divisor.set(tipo)
         pagina.v_params.set(parametros)
         pagina.calcular()
-        _revisar(pagina, app)
+        _revisar_ruffini(pagina, app)
 
 
 def test_smoke_pestana_2_candidatos(app):
