@@ -116,13 +116,13 @@ def dibujar_curva(ax, coeficientes, xlim=None, puntos=None, color=PLOT, etiqueta
         xlim = rango_x(coeficientes, puntos or [])
 
     span = xlim[1] - xlim[0]
-    x_dibujo_min = xlim[0] - span * 2
-    x_dibujo_max = xlim[1] + span * 2
+    x_dibujo_min = xlim[0] - span * 0.2
+    x_dibujo_max = xlim[1] + span * 0.2
 
     xs = np.linspace(x_dibujo_min, x_dibujo_max, 1000)
     ys = evaluar_curva(coeficientes, xs)
 
-    ax.plot(xs, ys, color=color, lw=2.0, label=etiqueta, zorder=3)
+    linea = ax.plot(xs, ys, color=color, lw=2.0, label=etiqueta, zorder=3)[0]
 
     # Marcamos ambos ejes (X e Y) con líneas oscuras
     ax.axhline(0, color=INK, lw=1.0, zorder=1)
@@ -132,6 +132,33 @@ def dibujar_curva(ax, coeficientes, xlim=None, puntos=None, color=PLOT, etiqueta
 
     ys_visibles = evaluar_curva(coeficientes, np.linspace(xlim[0], xlim[1], 500))
     _ajustar_y(ax, ys_visibles)
+
+    # --- REDIBUJADO DINÁMICO INFALIBLE ---
+    def _actualizar_curva(event_ax):
+        # Evitamos bucles infinitos
+        if getattr(linea, '_actualizando', False):
+            return
+
+        # Cada vez que cambie el eje X, recalculamos para cubrir exactamente lo que se ve + un margen
+        x0, x1 = event_ax.get_xlim()
+        nueva_span = x1 - x0
+        nuevo_min = x0 - nueva_span * 0.2
+        nuevo_max = x1 + nueva_span * 0.2
+
+        nuevos_xs = np.linspace(nuevo_min, nuevo_max, 1000)
+        nuevos_ys = evaluar_curva(coeficientes, nuevos_xs)
+
+        linea._actualizando = True
+        linea.set_data(nuevos_xs, nuevos_ys)
+        linea._actualizando = False
+
+    # Desconectamos el callback anterior si existe para no acumular eventos
+    if hasattr(ax, '_callback_id_curva'):
+        ax.callbacks.disconnect(ax._callback_id_curva)
+
+    # Conectamos el nuevo callback y guardamos su ID
+    ax._callback_id_curva = ax.callbacks.connect("xlim_changed", _actualizar_curva)
+    # -------------------------------------
 
     return xs, ys
 

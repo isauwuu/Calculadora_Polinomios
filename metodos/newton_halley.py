@@ -154,6 +154,13 @@ def halley(p: Polinomio, x0, eps=EPS_DEFAULT, max_iter=MAX_ITER_DEFAULT) -> Resu
         })
 
         if convergio(dx, x, eps):
+            # Chequeo anti falso-positivo: si P(x) no es chico, no es raíz.
+            if abs(px) > 1e-3:  # TOL_RESIDUO del test
+                raise DivisionPorCero(
+                    f"Halley se detuvo en un punto crítico (P' ≈ 0) donde P = {px}. "
+                    "Probá otro punto inicial.",
+                    pasos=pasos,
+                )
             return Resultado(
                 valor=x_sig,
                 iteraciones=n + 1,
