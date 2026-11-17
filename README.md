@@ -14,7 +14,7 @@ dist/RaicesDePolinomios/RaicesDePolinomios.exe
 
 1. Clonar el repositorio:
 ```bash
-git clone <url-del-repositorio>
+git clone (https://github.com/isauwuu/Calculadora_Polinomios.git)
 cd Calculadora_Polinomios
 ```
 
