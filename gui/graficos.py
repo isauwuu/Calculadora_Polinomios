@@ -1,9 +1,4 @@
-"""Figuras de matplotlib embebidas en Tkinter, sin pyplot.
-
-Cada pestaña crea su Figure una sola vez y la actualiza con clear/draw_idle.
-La figura y los ejes quedan accesibles para sumar después interacción o
-animación, que en esta etapa no se implementan.
-"""
+"""Figuras de matplotlib embebidas en Tkinter, sin pyplot."""
 
 import math
 import tkinter as tk
@@ -14,6 +9,7 @@ matplotlib.use("TkAgg")
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
+from matplotlib.ticker import MaxNLocator
 
 from gui.estilo import CARD, GREEN, INK, LINE, MUTED, ORANGE, PLOT
 from gui.formato import formatear_complejo, formatear_float
@@ -34,7 +30,31 @@ def evaluar_curva(coeficientes, xs):
     return np.polyval(_coef_desc(coeficientes), xs)
 
 
-def rango_x(coeficientes, puntos, pad=0.18):
+def raiz_en_intervalo(coeficientes, a, b, iteraciones=80):
+    """Aproxima por bisección la raíz única de P en (a, b), solo para graficar."""
+    fa = float(evaluar_curva(coeficientes, a))
+    fb = float(evaluar_curva(coeficientes, b))
+    if fa == 0:
+        return a
+    if fb == 0:
+        return b
+    if fa * fb > 0:
+        return None
+    for _ in range(iteraciones):
+        medio = (a + b) / 2
+        fm = float(evaluar_curva(coeficientes, medio))
+        if fm == 0:
+            return medio
+        if fa * fm < 0:
+            b = medio
+            fb = fm
+        else:
+            a = medio
+            fa = fm
+    return (a + b) / 2
+
+
+def rango_x(coeficientes, puntos, pad=0.12):
     """Elige un intervalo horizontal que contenga los puntos importantes."""
     valores = []
     for punto in puntos:
@@ -80,25 +100,39 @@ def _ajustar_y(ax, ys):
 
 def estilizar(ax, titulo=None):
     ax.set_facecolor(CARD)
-    ax.grid(alpha=0.3, lw=0.5, color=LINE)
-    ax.tick_params(labelsize=8, colors=MUTED, length=0)
+    ax.grid(alpha=0.3, lw=0.6, color=LINE)
+    ax.tick_params(labelsize=10, colors="#52636D", length=0)
     for nombre, spine in ax.spines.items():
         spine.set_visible(nombre in ("left", "bottom"))
         spine.set_color(LINE)
     if titulo:
-        ax.set_title(titulo, fontsize=9, color=INK, loc="left", pad=5)
+        ax.set_title(titulo, fontsize=11, color=INK, loc="left", pad=3)
 
 
 def dibujar_curva(ax, coeficientes, xlim=None, puntos=None, color=PLOT, etiqueta="P(x)"):
     """Dibuja P(x) y devuelve (xs, ys). No usa la GUI para calcular resultados."""
     if xlim is None:
         xlim = rango_x(coeficientes, puntos or [])
-    xs = np.linspace(xlim[0], xlim[1], 500)
+
+    # TRUCO: Calculamos la curva en un rango 2 veces más ancho para que
+    # al hacer zoom-out no se vea el "corte".
+    span = xlim[1] - xlim[0]
+    x_dibujo_min = xlim[0] - span * 2
+    x_dibujo_max = xlim[1] + span * 2
+
+    xs = np.linspace(x_dibujo_min, x_dibujo_max, 1000)
     ys = evaluar_curva(coeficientes, xs)
+
     ax.plot(xs, ys, color=color, lw=2.0, label=etiqueta, zorder=3)
     ax.axhline(0, color=INK, lw=0.8, zorder=1)
+
+    # Mantenemos la vista inicial ajustada al rango original
     ax.set_xlim(*xlim)
-    _ajustar_y(ax, ys)
+
+    # Ajustamos el eje Y basándonos SOLO en lo que se ve en pantalla, no en todo
+    ys_visibles = evaluar_curva(coeficientes, np.linspace(xlim[0], xlim[1], 500))
+    _ajustar_y(ax, ys_visibles)
+
     return xs, ys
 
 
@@ -155,14 +189,11 @@ class GraficoSimple(tk.Frame):
         self._arrastre = None
         self._movido = False
         self._hover = None
-        self.widget.bind("<ButtonPress-1>", self._presionar)
-        self.widget.bind("<B1-Motion>", self._mover)
-        self.widget.bind("<ButtonRelease-1>", self._soltar)
-        self.widget.bind("<Motion>", self._mover)
         self.widget.bind("<Leave>", self._salir)
-        self.widget.bind("<MouseWheel>", self._rueda)
-        self.widget.bind("<Button-4>", lambda e: self._rueda_boton(e, 120))
-        self.widget.bind("<Button-5>", lambda e: self._rueda_boton(e, -120))
+        self.canvas.mpl_connect("button_press_event", self._presionar)
+        self.canvas.mpl_connect("motion_notify_event", self._mover)
+        self.canvas.mpl_connect("button_release_event", self._soltar)
+        self.canvas.mpl_connect("scroll_event", self._rueda)
         self.limpiar()
 
     def limpiar(self, mensaje="Ingresá los datos y presioná Calcular."):
@@ -170,15 +201,10 @@ class GraficoSimple(tk.Frame):
         self.ax.set_facecolor(CARD)
         self.ax.axis("off")
         self.ax.text(
-            0.5,
-            0.5,
-            mensaje,
+            0.5, 0.5, mensaje,
             transform=self.ax.transAxes,
-            ha="center",
-            va="center",
-            fontsize=9,
-            color=MUTED,
-            wrap=True,
+            ha="center", va="center",
+            fontsize=11, color=MUTED, wrap=True,
         )
         self._coef_actual = None
         self._puntos_hover = []
@@ -197,11 +223,9 @@ class GraficoSimple(tk.Frame):
             xy=(0, 0),
             xytext=(12, 12),
             textcoords="offset points",
-            fontsize=8,
-            color=INK,
+            fontsize=9.5, color=INK,
             bbox=dict(boxstyle="round,pad=0.25", fc="white", ec=LINE, alpha=0.94),
-            visible=False,
-            zorder=20,
+            visible=False, zorder=20,
         )
         return self.ax
 
@@ -211,66 +235,41 @@ class GraficoSimple(tk.Frame):
         xs, ys = dibujar_curva(self.ax, coeficientes, xlim, puntos, PLOT, etiqueta)
         return xs, ys
 
-    def punto(
-        self,
-        x,
-        y,
-        etiqueta=None,
-        color=ORANGE,
-        marker="o",
-        mfc=None,
-        ms=7,
-        mew=1.2,
-        axes=None,
-    ):
+    def punto(self, x, y, etiqueta=None, color=ORANGE, marker="o", mfc=None, ms=7, mew=1.2, axes=None):
         ax = axes if axes is not None else self.ax
         linea = ax.plot(
-            [float(x)],
-            [float(y)],
-            marker=marker,
-            color=color,
-            markerfacecolor=mfc if mfc is not None else color,
+            [float(x)], [0.0],
+            marker="o", color=GREEN,
+            markerfacecolor=GREEN,  # <--- ANTES DECÍA "none", PONÉ GREEN
+            markeredgewidth=1.8, markersize=10,
             markeredgecolor=color,
-            markeredgewidth=mew,
-            markersize=ms,
-            linestyle="none",
-            label=etiqueta,
-            zorder=6,
+            linestyle="none", label=etiqueta, zorder=6,
         )[0]
-        self._puntos_hover.append(
-            (ax, float(x), float(y), etiqueta or "punto", linea)
-        )
+        self._puntos_hover.append((ax, float(x), float(y), etiqueta or "punto", linea))
         return linea
 
     def raiz(self, x, etiqueta="Raíz", axes=None):
         ax = axes if axes is not None else self.ax
         linea = ax.plot(
-            [float(x)],
-            [0.0],
-            marker="o",
-            color=GREEN,
-            markerfacecolor="none",
-            markeredgewidth=1.8,
-            markersize=10,
-            linestyle="none",
-            label=etiqueta,
-            zorder=7,
+            [float(x)], [0.0],
+            marker="o", color=GREEN, markerfacecolor=GREEN,
+            markeredgecolor="white", markeredgewidth=1.6, markersize=11,
+            linestyle="none", label=etiqueta, zorder=7,
         )[0]
         self._puntos_hover.append((ax, float(x), 0.0, etiqueta or "raíz", linea))
         return linea
 
     def finalizar(self, leyenda=True, ubicacion="best"):
-        self.figura.subplots_adjust(left=0.11, right=0.97, top=0.86, bottom=0.14)
+        self.figura.subplots_adjust(left=0.12, right=0.98, top=0.86, bottom=0.15)
         if leyenda:
             handles, labels = self.ax.get_legend_handles_labels()
             if handles:
-                self.ax.legend(fontsize=7, frameon=False, loc=ubicacion)
+                self.ax.legend(fontsize=9.5, frameon=False, loc=ubicacion)
         self._xlim_base = self.ax.get_xlim()
         self._ylim_base = self.ax.get_ylim()
         self.canvas.draw_idle()
 
     def reset_vista(self):
-        """Vuelve a los límites con los que se dibujó el gráfico."""
         if self._xlim_base is None or self._ylim_base is None:
             return
         self.ax.set_xlim(*self._xlim_base)
@@ -280,18 +279,13 @@ class GraficoSimple(tk.Frame):
     def redibujar(self):
         self.canvas.draw_idle()
 
-    # ------------------------------------------------------------------ interacción
     def _presionar(self, evento):
+        if evento.button != 1:
+            return
         if evento.xdata is None or evento.ydata is None:
             return
         ejes = evento.inaxes if evento.inaxes is not None else self.ax
-        self._arrastre = (
-            evento.x,
-            evento.y,
-            ejes.get_xlim(),
-            ejes.get_ylim(),
-            ejes,
-        )
+        self._arrastre = (evento.x, evento.y, ejes.get_xlim(), ejes.get_ylim(), ejes)
         self._movido = False
 
     def _mover(self, evento):
@@ -312,25 +306,21 @@ class GraficoSimple(tk.Frame):
         self._mostrar_hover(evento)
 
     def _soltar(self, evento):
+        if evento.button != 1:
+            return
         if self._arrastre is None:
             return
         arrastre = self._arrastre
         self._arrastre = None
-        if (
-            not self._movido
-            and self.al_clic is not None
-            and evento.xdata is not None
-            and evento.ydata is not None
-        ):
+        if not self._movido and self.al_clic is not None and evento.xdata is not None and evento.ydata is not None:
             self.al_clic(float(evento.xdata))
-        # Si no hubo arrastre, no se cambia la vista.
         if not self._movido:
             arrastre[4].set_xlim(*arrastre[2])
             arrastre[4].set_ylim(*arrastre[3])
             self.canvas.draw_idle()
 
     def _rueda(self, evento):
-        delta = 120 if evento.delta > 0 else -120
+        delta = 120 if evento.button == "up" else -120
         self._rueda_boton(evento, delta)
         return "break"
 
@@ -361,7 +351,6 @@ class GraficoSimple(tk.Frame):
         y = float(evento.ydata)
         texto = ""
         punto = None
-        # Primero los puntos dibujados (raíces, iteraciones, candidatos).
         for ax_punto, px, py, etiqueta, artista in self._puntos_hover:
             if ax_punto is not ejes or not artista.get_visible():
                 continue
@@ -406,7 +395,10 @@ class GraficoSimple(tk.Frame):
 
 
 class GraficoBairstow(GraficoSimple):
-    """Figura doble: P(x) en la recta real y todas las raíces en el plano complejo."""
+    """Figura con P(x) en la recta real y, al costado, el plano complejo."""
+
+    # Ancho relativo de [curva, plano complejo] cuando hay raíces complejas.
+    _ANCHOS = [1.5, 1.0]
 
     def __init__(self, master, pestana=None):
         super().__init__(master, pestana)
@@ -416,25 +408,20 @@ class GraficoBairstow(GraficoSimple):
         self._xlim_base2 = None
         self._ylim_base2 = None
         self.figura.clear()
-        self.ax = self.figura.add_subplot(1, 2, 1)
-        self.ax2 = self.figura.add_subplot(1, 2, 2)
+        self.ax = self.figura.add_subplot(111)
+        self.ax2 = None
         self.limpiar()
 
     def limpiar(self, mensaje="Ingresá los datos y presioná Calcular."):
         self.figura.clear()
-        self.ax = self.figura.add_subplot(1, 2, 1)
-        self.ax2 = self.figura.add_subplot(1, 2, 2)
-        for ax in (self.ax, self.ax2):
-            ax.set_facecolor(CARD)
-            ax.axis("off")
+        self.ax = self.figura.add_subplot(111)
+        self.ax2 = None
+        self.ax.set_facecolor(CARD)
+        self.ax.axis("off")
         self.figura.text(
-            0.5,
-            0.5,
-            mensaje,
-            ha="center",
-            va="center",
-            fontsize=9,
-            color=MUTED,
+            0.5, 0.5, mensaje,
+            ha="center", va="center",
+            fontsize=11, color=MUTED,
         )
         self._coef_actual = None
         self._puntos_hover = []
@@ -454,148 +441,148 @@ class GraficoBairstow(GraficoSimple):
             xy=(0, 0),
             xytext=(12, 12),
             textcoords="offset points",
-            fontsize=8,
+            fontsize=9.5,
             color=INK,
             bbox=dict(boxstyle="round,pad=0.25", fc="white", ec=LINE, alpha=0.94),
             visible=False,
             zorder=20,
         )
 
-    def dibujar_raices(self, coeficientes, raices, mostrar=True):
-        """Dibuja la curva real y el plano complejo.
+    def leyenda_plano(self):
+        """Leyenda del plano complejo, debajo del recuadro (no tapa puntos)."""
+        if self.ax2 is None:
+            return
+        handles, labels = self.ax2.get_legend_handles_labels()
+        if not handles:
+            return
+        self.ax2.legend(
+            handles, labels,
+            fontsize=8.5, frameon=False, loc="upper center",
+            bbox_to_anchor=(0.5, -0.24), borderaxespad=0.0,
+            handletextpad=0.4, labelspacing=0.3,
+        )
 
-        Si ``mostrar`` es False las raíces quedan ocultas y se guardan en
-        ``artistas_raices`` (una lista de artistas por raíz) para que la
-        pestaña las vaya revelando durante la animación.
-        """
+    def dibujar_raices(self, coeficientes, raices, mostrar=True):
+        """Dibuja la curva y, si hay raíces complejas, el plano complejo al lado."""
         self.figura.clear()
-        ax_real = self.figura.add_subplot(1, 2, 1)
-        ax_comp = self.figura.add_subplot(1, 2, 2)
         raices = [complex(z) for z in raices]
 
-        reales = [
-            z.real
-            for z in raices
-            if math.isclose(z.imag, 0.0, abs_tol=1e-9)
-        ]
-        complejas = [
-            z
-            for z in raices
-            if not math.isclose(z.imag, 0.0, abs_tol=1e-9)
-        ]
+        reales = [z.real for z in raices if math.isclose(z.imag, 0.0, abs_tol=1e-9)]
+        complejas = [z for z in raices if not math.isclose(z.imag, 0.0, abs_tol=1e-9)]
 
+        # 1. Ejes: dos columnas si hay complejas, uno solo si no.
+        if complejas:
+            gs = self.figura.add_gridspec(
+                1, 2, width_ratios=self._ANCHOS,
+                left=0.09, right=0.98, top=0.88, bottom=0.17, wspace=0.30,
+            )
+            ax_real = self.figura.add_subplot(gs[0])
+            ax_comp = self.figura.add_subplot(gs[1])
+        else:
+            ax_real = self.figura.add_subplot(111)
+            ax_comp = None
+            self.figura.subplots_adjust(left=0.12, right=0.98, top=0.86, bottom=0.15)
+
+        # 2. Gráfico principal (función P(x))
         xlim = rango_x(coeficientes, reales)
         dibujar_curva(ax_real, coeficientes, xlim, reales, PLOT, "P(x)")
-        estilizar(ax_real, "P(x) en la recta real")
+        estilizar(ax_real, "P(x) y raíces reales")
 
-        ax_comp.axhline(0, color=INK, lw=0.7)
-        ax_comp.axvline(0, color=INK, lw=0.7)
+        # 3. Plano complejo (Re / Im)
+        if ax_comp is not None:
+            estilizar(ax_comp, "Plano complejo")
+            ax_comp.axhline(0, color=INK, lw=0.6, zorder=1)
+            ax_comp.axvline(0, color=INK, lw=0.6, zorder=1)
 
-        valores = [abs(z.real) for z in raices] + [abs(z.imag) for z in raices]
-        limite = max([1.5] + [v * 1.25 + 0.5 for v in valores])
-        ax_comp.set_xlim(-limite, limite)
-        ax_comp.set_ylim(-limite, limite)
-        ax_comp.set_aspect("equal", adjustable="box")
-        estilizar(ax_comp, "Plano complejo")
-        ax_comp.tick_params(labelsize=7)
+            valores = [abs(z.real) for z in raices] + [abs(z.imag) for z in raices]
+            limite = max([1.5] + [v * 1.25 + 0.5 for v in valores])
+            ax_comp.set_xlim(-limite, limite)
+            ax_comp.set_ylim(-limite, limite)
+            ax_comp.set_aspect("equal", adjustable="box")
+            ax_comp.set_anchor("N")
+            ax_comp.xaxis.set_major_locator(MaxNLocator(nbins=5))
+            ax_comp.yaxis.set_major_locator(MaxNLocator(nbins=5))
+            ax_comp.tick_params(labelsize=9)
+            ax_comp.set_xlabel("Re", fontsize=9, color=MUTED, labelpad=2)
+            ax_comp.set_ylabel("Im", fontsize=9, color=MUTED, labelpad=4, rotation=0)
+            self.ax2 = ax_comp
+            self._hover_art2 = self._anotacion(ax_comp)
+        else:
+            self.ax2 = None
+            self._hover_art2 = None
 
         self.ax = ax_real
-        self.ax2 = ax_comp
         self._coef_actual = list(coeficientes)
         self._puntos_hover = []
         self._hover_art1 = self._anotacion(ax_real)
-        self._hover_art2 = self._anotacion(ax_comp)
         self._hover_art = self._hover_art1
         self.artistas_raices = []
 
         primera_real = True
         primera_real_comp = True
         primera_compleja = True
+
         for z in raices:
             artistas = []
             if math.isclose(z.imag, 0.0, abs_tol=1e-9):
+                # Raíz real: se dibuja en el gráfico grande
                 linea_real = ax_real.plot(
-                    [z.real],
-                    [0.0],
-                    marker="o",
-                    color=GREEN,
-                    markerfacecolor="none",
-                    markeredgewidth=1.6,
-                    markersize=8,
-                    linestyle="none",
+                    [z.real], [0.0],
+                    marker="o", color=GREEN, markerfacecolor=GREEN,
+                    markeredgewidth=1.6, markersize=8, linestyle="none",
                     label="Raíces reales" if primera_real else None,
-                    visible=mostrar,
-                    zorder=6,
+                    visible=mostrar, zorder=6,
                 )[0]
                 primera_real = False
                 artistas.append(linea_real)
-                self._puntos_hover.append(
-                    (ax_real, z.real, 0.0, "Raíz real", linea_real)
-                )
-                linea_comp = ax_comp.plot(
-                    [z.real],
-                    [0.0],
-                    marker="o",
-                    color=GREEN,
-                    markerfacecolor="none",
-                    markeredgewidth=1.5,
-                    markersize=7,
-                    linestyle="none",
-                    label="Reales" if primera_real_comp else None,
-                    visible=mostrar,
-                    zorder=5,
-                )[0]
-                primera_real_comp = False
-                artistas.append(linea_comp)
-                self._puntos_hover.append(
-                    (ax_comp, z.real, 0.0, "Raíz real", linea_comp)
-                )
+                self._puntos_hover.append((ax_real, z.real, 0.0, "Raíz real", linea_real))
+
+                if self.ax2 is not None:
+                    linea_comp = self.ax2.plot(
+                        [z.real], [0.0],
+                        marker="o", color=GREEN, markerfacecolor="none",
+                        markeredgewidth=1.5, markersize=6, linestyle="none",
+                        label="Reales" if primera_real_comp else None,
+                        visible=mostrar, zorder=5,
+                    )[0]
+                    primera_real_comp = False
+                    artistas.append(linea_comp)
+                    self._puntos_hover.append((self.ax2, z.real, 0.0, "Raíz real", linea_comp))
             else:
-                linea_comp = ax_comp.plot(
-                    [z.real],
-                    [z.imag],
-                    marker="s",
-                    color=ORANGE,
-                    markerfacecolor=ORANGE,
-                    markersize=6,
-                    linestyle="none",
+                # Raíz compleja: solo en el plano complejo
+                linea_comp = self.ax2.plot(
+                    [z.real], [z.imag],
+                    marker="s", color=ORANGE, markerfacecolor=ORANGE,
+                    markersize=6, linestyle="none",
                     label="Complejas" if primera_compleja else None,
-                    visible=mostrar,
-                    zorder=5,
+                    visible=mostrar, zorder=5,
                 )[0]
                 primera_compleja = False
                 artistas.append(linea_comp)
-                self._puntos_hover.append(
-                    (ax_comp, z.real, z.imag, "Raíz compleja", linea_comp)
-                )
+                self._puntos_hover.append((self.ax2, z.real, z.imag, "Raíz compleja", linea_comp))
             self.artistas_raices.append(artistas)
 
         if reales:
-            ax_real.legend(fontsize=6, frameon=False, loc="best")
-        if raices:
-            ax_comp.legend(fontsize=6, frameon=False, loc="best")
+            ax_real.legend(fontsize=9.5, frameon=False, loc="upper left")
+        self.leyenda_plano()
 
-        self.figura.subplots_adjust(
-            left=0.09, right=0.97, top=0.86, bottom=0.14, wspace=0.38
-        )
         self._xlim_base = ax_real.get_xlim()
         self._ylim_base = ax_real.get_ylim()
-        self._xlim_base2 = ax_comp.get_xlim()
-        self._ylim_base2 = ax_comp.get_ylim()
+        self._xlim_base2 = self.ax2.get_xlim() if self.ax2 else None
+        self._ylim_base2 = self.ax2.get_ylim() if self.ax2 else None
         self.canvas.draw_idle()
 
     def reset_vista(self):
-        """Restablece los límites de los dos ejes (curva y plano complejo)."""
         if self._xlim_base is not None:
             self.ax.set_xlim(*self._xlim_base)
             self.ax.set_ylim(*self._ylim_base)
-        if self._xlim_base2 is not None:
+        if self._xlim_base2 is not None and self.ax2 is not None:
             self.ax2.set_xlim(*self._xlim_base2)
             self.ax2.set_ylim(*self._ylim_base2)
         self.canvas.draw_idle()
 
     def _mostrar_hover(self, evento):
-        if evento.inaxes is self.ax2:
+        if evento.inaxes is self.ax2 and self.ax2 is not None:
             self._hover_art = self._hover_art2
         else:
             self._hover_art = self._hover_art1

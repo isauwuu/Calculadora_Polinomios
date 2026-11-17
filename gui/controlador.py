@@ -10,7 +10,7 @@ import cmath
 import math
 from fractions import Fraction
 
-from core.config import EPS_DEFAULT, MAX_ITER
+from core.config import EPS_DEFAULT, MAX_ITER_DEFAULT
 from core.errores import EntradaInvalida, PolinomioInvalido, ToleranciaInvalida
 from core.numeros import parsear_coeficientes, parsear_numero
 from core.polinomio import Polinomio
@@ -135,8 +135,9 @@ def dividir(texto, tipo_divisor, parametros):
         return f(p, a, b)
 
     b = _parametros_racionales(parametros, 1, ("b",))[0]
-    f = _metodo("metodos.division", "dividir_por_x_mas_b")
-    return f(p, b)
+    # El divisor es (x + b) = x - (-b): el back recibe la raíz -b.
+    f = _metodo("metodos.division", "dividir_por_x_menos_b")
+    return f(p, -b)
 
 
 # ---------------------------------------------------------------------------
@@ -276,7 +277,7 @@ def tabla_ruffini_cuadratica(polinomio, a, b):
     calculos = []
 
     for j, i in enumerate(range(n, -1, -1)):
-        if i + 1 <= n:
+        if i + 1 <= n and i > 0:  # <-- i > 0 evita calcular la última columna
             productos_a[j] = -a * c[i + 1]
         if i + 2 <= n:
             productos_b[j] = -b * c[i + 2]
@@ -349,7 +350,14 @@ def tabla_ruffini_ax_mas_b(polinomio, a, b):
     return base
 
 
-def _seccion_ruffini(datos, etiqueta_alpha, titulo=None, nota="", cuadratica=False):
+def _seccion_ruffini(
+    datos,
+    etiqueta_alpha,
+    titulo=None,
+    nota="",
+    cuadratica=False,
+    etiqueta_b="−b",
+):
     """Convierte las filas numéricas de Ruffini en una sección para la vista."""
     fila1 = datos["fila1"]
     fila2 = datos.get("productos_a", datos["fila2"]) if cuadratica else datos["fila2"]
@@ -371,7 +379,7 @@ def _seccion_ruffini(datos, etiqueta_alpha, titulo=None, nota="", cuadratica=Fal
         productos_b = datos.get("productos_b", [None] * len(fila1))
         filas.append(
             {
-                "valores": ["−b·c"] + ["" if v is None else _texto(v) for v in productos_b],
+                "valores": [etiqueta_b] + ["" if v is None else _texto(v) for v in productos_b],
                 "tipo": "producto",
                 "calculos": [""] * ancho,
             }
@@ -392,7 +400,16 @@ def _seccion_ruffini(datos, etiqueta_alpha, titulo=None, nota="", cuadratica=Fal
         (ultima, len(fila1) - 1),
         (ultima, len(fila1)),
     ]
+    # Cabecera a_n … a_0 solo para el esquema cuadrático, donde el apunte la
+    # usa para ubicar los coeficientes del divisor.
+    cabecera = None
+    if cuadratica:
+        grado = len(fila1) - 1
+        cabecera = [f"a_{g}" for g in range(grado, -1, -1)]
     return {
+        "estilo": "ruffini",
+        "tipo": "cuadratica" if cuadratica else "lineal",
+        "cabecera": cabecera,
         "titulo": titulo,
         "columnas": None,
         "filas": filas,
@@ -404,6 +421,7 @@ def _seccion_ruffini(datos, etiqueta_alpha, titulo=None, nota="", cuadratica=Fal
 
 def _seccion_tabla(columnas, filas, titulo=None, nota=""):
     return {
+        "estilo": "tabla",
         "titulo": titulo,
         "columnas": list(columnas),
         "filas": list(filas),
@@ -545,9 +563,10 @@ def esquema_division(texto, tipo_divisor, parametros):
         )
         seccion = _seccion_ruffini(
             datos,
-            "−b/a, −c/a",
+            "−b/a",
             nota=nota + " · Cociente: " + _texto_polinomio(datos["cociente"]),
             cuadratica=True,
+            etiqueta_b="−c/a",
         )
         pasos = [
             {"seccion": 0, "columna": j, "filas": [0, 1, 2, 3]}
@@ -567,10 +586,11 @@ def esquema_division(texto, tipo_divisor, parametros):
             return {"secciones": [seccion], "pasos": []}
         seccion = _seccion_ruffini(
             datos,
-            "−a, −b",
+            "−a",
             nota=f"Cociente: {_texto_polinomio(datos['cociente'])} · "
             f"Resto: {_texto_polinomio(datos['resto'])}",
             cuadratica=True,
+            etiqueta_b="−b",
         )
         pasos = [
             {"seccion": 0, "columna": j, "filas": [0, 1, 2, 3]}
@@ -598,7 +618,7 @@ def esquema_division(texto, tipo_divisor, parametros):
     datos = tabla_ruffini(p, -Fraction(b))
     seccion = _seccion_ruffini(
         datos,
-        f"α = −b = {_texto(-Fraction(b))}",
+        f"α = {_texto(-Fraction(b))}",
         nota=f"Cociente: {_texto_polinomio(datos['cociente'])} · "
         f"Resto: {_texto(datos['resto'])}",
     )
@@ -632,13 +652,13 @@ def factorizar_raices(texto, raices):
     texto de la factorización; la cuenta la hace esta capa.
     """
     p = leer_polinomio(texto)
-    dividir_lineal = _metodo("metodos.division", "dividir_por_x_mas_b")
+    dividir_por_raiz = _metodo("metodos.division", "dividir_por_x_menos_b")
     factores = []
     q = p
     for raiz in raices:
         r = Fraction(raiz)
         while q.grado >= 1:
-            cociente, resto = dividir_lineal(q, -r).valor
+            cociente, resto = dividir_por_raiz(q, r).valor
             if resto != 0:
                 break
             factores.append(r)
@@ -893,6 +913,44 @@ def biseccion_sturm(texto, a_texto, b_texto, simplificada=False):
     return {"a": a, "b": b, "estados": estados}
 
 
+def tabla_signos_sturm(texto, puntos_texto, simplificada=False):
+    """Calcula la tabla de signos completa para la vista de Sturm."""
+    p = leer_polinomio(texto)
+    f_sucesion = _metodo("metodos.sturm", "sucesion_sturm")
+    f_cambios = _metodo("metodos.sturm", "cambios_signo")
+    evaluar = _metodo("metodos.evaluacion", "horner_fraction")
+
+    # Parsear los puntos de evaluación
+    puntos = parsear_coeficientes(puntos_texto)
+
+    # Obtener la sucesión
+    res_sucesion = f_sucesion(p, simplificada)
+    sucesion = res_sucesion.valor
+
+    # Armar las filas de signos
+    filas_signos = []
+    for q in sucesion:
+        fila = []
+        for x in puntos:
+            valor = evaluar(q, x).valor
+            signo = 1 if valor > 0 else (-1 if valor < 0 else 0)
+            fila.append(signo)
+        filas_signos.append(fila)
+
+    # Calcular NCS para cada punto
+    ncs = []
+    for col in range(len(puntos)):
+        signos_columna = [fila[col] for fila in filas_signos]
+        ncs.append(f_cambios(signos_columna))
+
+    return {
+        "sucesion": sucesion,
+        "puntos": puntos,
+        "signos": filas_signos,
+        "ncs": ncs,
+        "avisos": res_sucesion.avisos
+    }
+
 # ---------------------------------------------------------------------------
 # Pestaña 6: Bairstow
 # ---------------------------------------------------------------------------
@@ -950,11 +1008,17 @@ def bairstow(texto, r0_texto, s0_texto, eps_texto, max_iter_texto):
     resultado.pasos = _anotar_raices_por_factor(resultado.pasos)
     return resultado
 
+def sucesion_estandar_sturm(texto):
+    """Sucesión de Sturm estándar de P, sin rehacerla por raíces múltiples."""
+    p = leer_polinomio(texto)
+    f = _metodo("metodos.sturm", "_sucesion_estandar")
+    sucesion, multiples, mcd, cero_en = f(p)
+    return {"sucesion": sucesion, "multiples": multiples, "mcd": mcd, "cero_en": cero_en}
 
 # Valores por defecto reexportados para las pestañas.
 __all__ = [
     "EPS_DEFAULT",
-    "MAX_ITER",
+    "MAX_ITER_DEFAULT",
     "bairstow",
     "biseccion_sturm",
     "coeficientes_float",

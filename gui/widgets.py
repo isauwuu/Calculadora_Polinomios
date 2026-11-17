@@ -40,8 +40,9 @@ class Card(tk.Canvas):
         shadow=True,
         outer=BG,
         deco=None,
-        pad=16,
+        pad=14,
         use_inner=True,
+        autoheight=False,
     ):
         super().__init__(master, bg=outer, highlightthickness=0, bd=0)
         self.r = r
@@ -52,6 +53,10 @@ class Card(tk.Canvas):
         self.deco = deco
         self.m = 8 if shadow else 0
         self.pad = pad + self.m
+        self.autoheight = autoheight
+        self._alto_auto = None
+        self._alto_job = None
+        self._alto_intentos = 0
         self._size = None
         self._imagen = None
         self._ventanas = []
@@ -67,6 +72,9 @@ class Card(tk.Canvas):
                     max(h - 2 * self.pad + 4, 1),
                 ),
             )
+            if autoheight:
+                self.configure(height=1)
+                self.inner.bind("<Configure>", self._al_configurar_inner, add="+")
         self.bind("<Configure>", self._al_configurar)
 
     def add(self, frame, boxfn):
@@ -80,6 +88,50 @@ class Card(tk.Canvas):
             return
         self._size = (evento.width, evento.height)
         self._pintar(evento.width, evento.height)
+
+    def _al_configurar_inner(self, _evento=None):
+        """Ajusta el alto de la tarjeta al alto real de su contenido."""
+        if not self.autoheight or self.inner is None:
+            return
+        requerido = self.inner.winfo_reqheight()
+        alto = max(requerido + 2 * self.pad - 4, 36)
+        if self._alto_auto is None or abs(alto - self._alto_auto) >= 2:
+            self._alto_auto = alto
+            self.configure(height=alto)
+
+    def actualizar_alto(self):
+        """Recalcula el alto automático después de mostrar u ocultar hijos."""
+        if not self.autoheight:
+            return
+        self._al_configurar_inner()
+        self._alto_intentos = 8
+        self._programar_alto()
+
+    def _programar_alto(self):
+        """Reintenta el cálculo cuando Tk todavía no propagó el tamaño de los hijos."""
+        if self._alto_job is not None:
+            try:
+                self.after_cancel(self._alto_job)
+            except tk.TclError:
+                pass
+        try:
+            self._alto_job = self.after(40, self._revisar_alto)
+        except tk.TclError:
+            self._alto_job = None
+
+    def _revisar_alto(self):
+        self._alto_job = None
+        if not self.winfo_exists():
+            return
+        anterior = self._alto_auto
+        self._al_configurar_inner()
+        # Los hijos se acomodan en varios ciclos de geometría (y las tarjetas
+        # anidadas en cascada), así que reintentamos unas pocas veces más.
+        if self._alto_auto != anterior:
+            self._alto_intentos = max(self._alto_intentos, 4)
+        self._alto_intentos -= 1
+        if self._alto_intentos > 0:
+            self._programar_alto()
 
     def _pintar(self, w, h):
         pil = imagenes.rounded_image(
@@ -121,8 +173,8 @@ class Card(tk.Canvas):
 class REntry(tk.Canvas):
     """Campo de texto con borde redondeado y foco verde."""
 
-    def __init__(self, master, var, font, bg=CARD, height=38):
-        super().__init__(master, height=height, bg=bg, highlightthickness=0, bd=0)
+    def __init__(self, master, var, font, bg=CARD, height=40):
+        super().__init__(master, height=height, bg=bg, highlightthickness=0, bd=0, width=1)
         self.bgc = bg
         self.foco = False
         self._size = None
@@ -189,7 +241,7 @@ class RButton(tk.Canvas):
         icon=None,
         font=None,
         bg=CARD,
-        height=42,
+        height=44,
     ):
         super().__init__(master, height=height, bg=bg, highlightthickness=0, bd=0, cursor="hand2")
         self.t = text
@@ -265,7 +317,7 @@ class RButton(tk.Canvas):
 class Seg(tk.Canvas):
     """Selector segmentado con íconos de radio."""
 
-    def __init__(self, master, options, var, font, bg=CARD, height=38, on_change=None):
+    def __init__(self, master, options, var, font, bg=CARD, height=40, on_change=None):
         super().__init__(master, height=height, bg=bg, highlightthickness=0, bd=0, cursor="hand2")
         self.opts = list(options)
         self.var = var
@@ -289,8 +341,8 @@ class Seg(tk.Canvas):
     def _bounds(self):
         w, h = self._size
         n = len(self.opts)
-        gap = 8
-        base = [self.font.measure(o) + 42 for o in self.opts]
+        gap = 7
+        base = [self.font.measure(o) + 36 for o in self.opts]
         disponible = max(w - gap * (n - 1), n * 20)
         total = sum(base) or 1
         if total <= disponible:
@@ -366,9 +418,9 @@ class TabBar(tk.Frame):
         self.sel = 0
         self._imgs = []
         for i, label in enumerate(self.labels):
-            ancho = font.measure(label) + 70
+            ancho = font.measure(label) + 66
             cv = tk.Canvas(self, width=ancho, height=48, bg=BG, highlightthickness=0, bd=0, cursor="hand2")
-            cv.grid(row=0, column=i, padx=(0, 8))
+            cv.grid(row=0, column=i, padx=(0, 7))
             cv.bind("<ButtonRelease-1>", lambda _, i=i: self.select(i))
             self.cvs.append((cv, ancho))
         self.select(0, fire=False)
@@ -389,23 +441,53 @@ class TabBar(tk.Frame):
 
 
 class TablaPasos(tk.Frame):
-    """Tabla genérica: cada pestaña decide columnas y filas."""
+    """Tabla genérica con alto según las filas y barras solo si hacen falta."""
 
-    def __init__(self, master, fuentes, height=8):
+    def __init__(self, master, fuentes, height=8, max_filas=12):
         super().__init__(master, bg=CARD)
         self.fuentes = fuentes
         self._columnas = []
+        self.max_filas = max_filas
+        self._barra_pendiente = None
+        self._v_visible = False
+        self._h_visible = False
         self.tree = ttk.Treeview(
             self,
             show="headings",
             style="Calc.Treeview",
             selectmode="browse",
-            height=height,
+            height=min(height, max_filas),
         )
-        self.scroll = ttk.Scrollbar(self, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=self.scroll.set)
+        # El estilo sin flechas pide 1 px; los marcos fijan el grosor real de
+        # la barra (8 px) y reservan su espacio solo cuando se muestran.
+        self.marco_v = tk.Frame(self, bg=CARD, width=8)
+        self.marco_v.pack_propagate(False)
+        self.marco_h = tk.Frame(self, bg=CARD, height=8)
+        self.marco_h.pack_propagate(False)
+        self.vscroll = ttk.Scrollbar(
+            self.marco_v,
+            orient="vertical",
+            command=self.tree.yview,
+            style="Vertical.TScrollbar",
+        )
+        self.vscroll.pack(fill="both", expand=True)
+        self.hscroll = ttk.Scrollbar(
+            self.marco_h,
+            orient="horizontal",
+            command=self.tree.xview,
+            style="Horizontal.TScrollbar",
+        )
+        self.hscroll.pack(fill="both", expand=True)
+        self.scroll = self.vscroll  # compatibilidad con el nombre anterior
+        self.tree.configure(
+            yscrollcommand=self._actualizar_yview,
+            xscrollcommand=self._actualizar_xview,
+        )
         self.tree.grid(row=0, column=0, sticky="nsew")
-        self.scroll.grid(row=0, column=1, sticky="ns")
+        self.marco_v.grid(row=0, column=1, sticky="ns")
+        self.marco_h.grid(row=1, column=0, sticky="ew")
+        self.marco_v.grid_remove()
+        self.marco_h.grid_remove()
         self.rowconfigure(0, weight=1)
         self.columnconfigure(0, weight=1)
 
@@ -418,10 +500,14 @@ class TablaPasos(tk.Frame):
         self.tree.tag_configure("cero", background=AMBER_L, foreground=AMBER)
         self.tree.tag_configure("resto", background=BLUE_L, foreground=NAVY)
         self.al_elegir_paso = None
-        self._seleccion_programatica = False
-        self.tree.bind("<<TreeviewSelect>>", self._al_seleccionar)
+        # Se usa el clic (y las teclas de navegación) en lugar de
+        # <<TreeviewSelect>>: la selección programática de la animación también
+        # dispara ese evento virtual y realimentaba la animación sin fin.
+        self.tree.bind("<ButtonRelease-1>", self._al_clic)
+        self.tree.bind("<KeyRelease>", self._al_tecla)
+        self.tree.bind("<Configure>", lambda _: self._programar_barras(), add="+")
 
-    def configurar(self, columnas):
+    def configurar(self, columnas, estirar=True):
         """columnas: lista de (clave, título, ancho, alineación)."""
         self.limpiar()
         self._columnas = list(columnas)
@@ -429,7 +515,13 @@ class TablaPasos(tk.Frame):
         self.tree["columns"] = claves
         for clave, titulo, ancho, alineacion in self._columnas:
             self.tree.heading(clave, text=titulo, anchor="center")
-            self.tree.column(clave, width=ancho, minwidth=max(40, ancho // 2), anchor=alineacion, stretch=True)
+            self.tree.column(
+                clave,
+                width=ancho,
+                minwidth=ancho if not estirar else max(40, ancho // 2),
+                anchor=alineacion,
+                stretch=estirar,
+            )
 
     def cargar(self, filas, tags=None):
         """Carga filas (lista de dicts) y, opcionalmente, tags por fila."""
@@ -443,14 +535,63 @@ class TablaPasos(tk.Frame):
             else:
                 etiquetas = ("odd",) if i % 2 else ()
             self.tree.insert("", "end", values=valores, tags=etiquetas)
+        self.tree.configure(height=max(1, min(len(filas), self.max_filas)))
         hijos = self.tree.get_children()
         if hijos:
             self.tree.yview_moveto(0)
+            self.tree.xview_moveto(0)
+        self._programar_barras()
 
     def limpiar(self):
         hijos = self.tree.get_children()
         if hijos:
             self.tree.delete(*hijos)
+        self.tree.configure(height=1)
+        self._programar_barras()
+
+    def _actualizar_yview(self, first, last):
+        self.vscroll.set(first, last)
+        self._programar_barras()
+
+    def _actualizar_xview(self, first, last):
+        self.hscroll.set(first, last)
+        self._programar_barras()
+
+    def _programar_barras(self):
+        if self._barra_pendiente is not None:
+            return
+        try:
+            self._barra_pendiente = self.after_idle(self._actualizar_barras)
+        except tk.TclError:
+            self._barra_pendiente = None
+
+    def _actualizar_barras(self):
+        self._barra_pendiente = None
+        try:
+            x0, x1 = self.tree.xview()
+            y0, y1 = self.tree.yview()
+        except tk.TclError:
+            return
+        mostrar_v = not (y0 <= 0.001 and y1 >= 0.999)
+        mostrar_h = not (x0 <= 0.001 and x1 >= 0.999)
+        cambio = False
+        if mostrar_v != self._v_visible:
+            self._v_visible = mostrar_v
+            if mostrar_v:
+                self.marco_v.grid()
+            else:
+                self.marco_v.grid_remove()
+            cambio = True
+        if mostrar_h != self._h_visible:
+            self._h_visible = mostrar_h
+            if mostrar_h:
+                self.marco_h.grid()
+            else:
+                self.marco_h.grid_remove()
+            cambio = True
+        if cambio:
+            # Al mostrar u ocultar una barra cambia el espacio disponible.
+            self._programar_barras()
 
     def filas(self):
         return len(self.tree.get_children())
@@ -458,25 +599,37 @@ class TablaPasos(tk.Frame):
     def seleccionar(self, indice):
         """Resalta la fila del paso activo sin disparar el callback de clic."""
         hijos = self.tree.get_children()
-        self._seleccion_programatica = True
-        try:
-            if 0 <= indice < len(hijos):
-                item = hijos[indice]
-                self.tree.selection_set(item)
-                self.tree.focus(item)
-                self.tree.see(item)
-            else:
-                seleccion = self.tree.selection()
-                if seleccion:
-                    self.tree.selection_remove(*seleccion)
-        finally:
-            self._seleccion_programatica = False
+        if 0 <= indice < len(hijos):
+            item = hijos[indice]
+            self.tree.selection_set(item)
+            self.tree.focus(item)
+            self.tree.see(item)
+        else:
+            seleccion = self.tree.selection()
+            if seleccion:
+                self.tree.selection_remove(*seleccion)
 
     def quitar_seleccion(self):
         self.seleccionar(-1)
 
-    def _al_seleccionar(self, _evento=None):
-        if self._seleccion_programatica or self.al_elegir_paso is None:
+    def _al_clic(self, evento=None):
+        """Avisa qué fila eligió el usuario con el mouse."""
+        if self.al_elegir_paso is None:
+            return
+        fila = self.tree.identify_row(evento.y) if evento is not None else ""
+        if not fila:
+            return
+        try:
+            indice = self.tree.index(fila)
+        except tk.TclError:
+            return
+        self.al_elegir_paso(indice)
+
+    def _al_tecla(self, evento=None):
+        """Permite recorrer los pasos con las flechas del teclado."""
+        if self.al_elegir_paso is None or evento is None:
+            return
+        if evento.keysym not in ("Up", "Down", "Home", "End", "Prior", "Next"):
             return
         seleccion = self.tree.selection()
         if not seleccion:
@@ -492,9 +645,17 @@ class TarjetaResultado(Card):
     """Tarjeta verde (o ámbar) con el valor principal y la verificación."""
 
     def __init__(self, master, fuentes):
-        super().__init__(master, r=14, fill=GREEN_L, outline=GREEN_B, shadow=False, outer=CARD, pad=15)
+        super().__init__(
+            master,
+            r=14,
+            fill=GREEN_L,
+            outline=GREEN_B,
+            shadow=False,
+            outer=CARD,
+            pad=16,
+            autoheight=True,
+        )
         self.fuentes = fuentes
-        self.configure(height=156)
         self._icono_ok = imagenes.photo(imagenes.icon_image("check", 22, GREEN))
         self._icono_warn = imagenes.photo(imagenes.icon_image("warn", 22, AMBER))
         self._labels = []
@@ -503,7 +664,7 @@ class TarjetaResultado(Card):
         fila.pack(anchor="w")
         self.lbl_icono = tk.Label(fila, image=self._icono_ok, bg=GREEN_L)
         self.lbl_icono.pack(side="left")
-        self.lbl_titulo = tk.Label(fila, text="Resultado", font=fuentes.bold, bg=GREEN_L, fg=INK)
+        self.lbl_titulo = tk.Label(fila, text="Resultado", font=fuentes.h3, bg=GREEN_L, fg=INK)
         self.lbl_titulo.pack(side="left", padx=(8, 0))
         self._labels.extend([fila, self.lbl_icono, self.lbl_titulo])
 
@@ -538,6 +699,7 @@ class TarjetaResultado(Card):
 
     def _ajustar_wrap(self, evento):
         ancho = max(evento.width - 8, 180)
+        self.lbl_principal.configure(wraplength=ancho)
         self.lbl_detalle.configure(wraplength=ancho)
         self.lbl_ref.configure(wraplength=ancho)
 
@@ -556,15 +718,24 @@ class TarjetaResultado(Card):
         self.lbl_principal.configure(text=principal, fg=color_principal, bg=fill)
         self.lbl_detalle.configure(text=detalle, fg=INK, bg=fill)
         self.lbl_ref.configure(text=referencia, bg=fill, fg="#4F7A62" if tono != "amber" else AMBER)
+        self.actualizar_alto()
 
 
 class Banner(Card):
     """Banner de avisos y errores, con texto además del color."""
 
     def __init__(self, master, fuentes):
-        super().__init__(master, r=12, fill=AMBER_L, outline=AMBER_B, shadow=False, outer=CARD, pad=11)
+        super().__init__(
+            master,
+            r=12,
+            fill=AMBER_L,
+            outline=AMBER_B,
+            shadow=False,
+            outer=CARD,
+            pad=12,
+            autoheight=True,
+        )
         self.fuentes = fuentes
-        self.configure(height=70)
         self._icono_amber = imagenes.photo(imagenes.icon_image("warn", 17, AMBER))
         self._icono_rojo = imagenes.photo(imagenes.icon_image("warn", 17, RED))
         self._labels = []
@@ -575,7 +746,7 @@ class Banner(Card):
         self.lbl_texto = tk.Label(
             fila,
             text="",
-            font=fuentes.small,
+            font=fuentes.normal,
             bg=AMBER_L,
             fg=AMBER,
             justify="left",
@@ -601,3 +772,4 @@ class Banner(Card):
             widget.configure(bg=fill)
         self.lbl_icono.configure(image=icono, bg=fill)
         self.lbl_texto.configure(text=texto, fg=color, bg=fill)
+        self.actualizar_alto()

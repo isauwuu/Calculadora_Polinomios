@@ -26,6 +26,10 @@ RED = "#A83232"
 RED_L = "#FDECEC"
 RED_B = "#E8B4B4"
 BLUE_L = "#EAF0F7"
+RUFFINI_LINE = "#A9B7C0"
+RUFFINI_BAND = "#E8F1FA"
+RUFFINI_BOX = "#F3F5F6"
+RUFFINI_PRODUCT = "#58708A"
 
 
 def _primera_familia(root, candidatas):
@@ -47,6 +51,11 @@ class Fuentes:
         self.mono = _primera_familia(
             root, ("Cascadia Mono", "Consolas", "DejaVu Sans Mono", "Courier New")
         )
+        # Serif tipo apunte para los esquemas de Ruffini.
+        self.math_familia = _primera_familia(
+            root,
+            ("DejaVu Serif", "Liberation Serif", "Noto Serif", "Georgia", "Times New Roman"),
+        )
 
         def F(**opciones):
             return tkfont.Font(root=root, family=self.familia, **opciones)
@@ -54,22 +63,37 @@ class Fuentes:
         def M(**opciones):
             return tkfont.Font(root=root, family=self.mono, **opciones)
 
-        self.title = F(size=-25, weight="bold")
-        self.subtitle = F(size=-13)
-        self.tab = F(size=-12)
-        self.h2 = F(size=-17, weight="bold")
-        self.label = F(size=-12)
-        self.small = F(size=-10)
-        self.small_italic = F(size=-10, slant="italic")
-        self.hint = F(size=-10, slant="italic")
-        self.button = F(size=-13, weight="bold")
-        self.entry = M(size=-13)
-        self.big = F(size=-24, weight="bold")
-        self.normal = F(size=-12)
-        self.bold = F(size=-12, weight="bold")
-        self.mono = M(size=-11)
-        self.mono_bold = M(size=-11, weight="bold")
-        self.head = F(size=-11, weight="bold")
+        def S(**opciones):
+            return tkfont.Font(root=root, family=self.math_familia, **opciones)
+
+        # Tamaños en píxeles (los negativos evitan el escalado automático de Tk).
+        self.title = F(size=-26, weight="bold")
+        self.subtitle = F(size=-14)
+        self.tab = F(size=-15)
+        self.h2 = F(size=-20, weight="bold")
+        self.h3 = F(size=-18, weight="bold")
+        self.label = F(size=-15)
+        self.small = F(size=-13)
+        self.small_italic = F(size=-13, slant="italic")
+        self.hint = F(size=-13, slant="italic")
+        self.button = F(size=-15, weight="bold")
+        self.entry = M(size=-15)
+        self.big = F(size=-27, weight="bold")
+        self.normal = F(size=-15)
+        self.bold = F(size=-15, weight="bold")
+        self.value = F(size=-18, weight="bold")
+        self.mono = M(size=-15)
+        self.mono_bold = M(size=-15, weight="bold")
+        self.head = F(size=-14, weight="bold")
+
+        # Esquemas matemáticos: números grandes y etiquetas más chicas.
+        self.math = S(size=-18)
+        self.math_bold = S(size=-18, weight="bold")
+        self.math_label = S(size=-15)
+        self.math_small = S(size=-13)
+        self.math_small_bold = S(size=-13, weight="bold")
+        self.math_sub = S(size=-10)
+        self.math_italic = S(size=-13, slant="italic")
 
 
 def crear_estilos(root, fuentes):
@@ -85,7 +109,7 @@ def crear_estilos(root, fuentes):
         background=CARD,
         fieldbackground=CARD,
         foreground=INK,
-        rowheight=29,
+        rowheight=34,
         borderwidth=0,
         font=fuentes.mono,
     )
@@ -95,7 +119,7 @@ def crear_estilos(root, fuentes):
         foreground="white",
         font=fuentes.head,
         relief="flat",
-        padding=(7, 7),
+        padding=(8, 8),
         borderwidth=0,
         bordercolor=NAVY,
         lightcolor=NAVY,
@@ -119,7 +143,26 @@ def crear_estilos(root, fuentes):
         bordercolor=FIELD_B,
         lightcolor=FIELD_B,
         darkcolor=FIELD_B,
-        padding=(7, 6),
+        padding=(8, 7),
+    )
+    style.configure(
+        "Calc.TNotebook",
+        background=CARD,
+        borderwidth=0,
+        tabmargins=(0, 0, 0, 0),
+    )
+    style.configure(
+        "Calc.TNotebook.Tab",
+        background="#EAF0ED",
+        foreground=INK,
+        font=fuentes.normal,
+        padding=(16, 8),
+        borderwidth=0,
+    )
+    style.map(
+        "Calc.TNotebook.Tab",
+        background=[("selected", CARD), ("active", GREEN_L)],
+        foreground=[("selected", NAVY)],
     )
     style.map(
         "Calc.TCombobox",
@@ -133,3 +176,37 @@ def crear_estilos(root, fuentes):
     root.option_add("*TCombobox*Listbox.foreground", INK)
     root.option_add("*TCombobox*Listbox.selectBackground", GREEN_L)
     root.option_add("*TCombobox*Listbox.selectForeground", INK)
+    # Barras finas, sin flechas y con el riel del color de la tarjeta.
+    for orient, sticky in (("Vertical", "ns"), ("Horizontal", "ew")):
+        estilo = f"{orient}.TScrollbar"
+        style.configure(
+            estilo,
+            background="#B7C8D2",
+            troughcolor=CARD,
+            bordercolor=CARD,
+            lightcolor=CARD,
+            darkcolor=CARD,
+            arrowcolor=CARD,
+            arrowsize=0,
+            borderwidth=0,
+            relief="flat",
+            width=8,
+        )
+        style.map(estilo, background=[("active", "#9FB3BF")])
+        style.layout(
+            estilo,
+            [
+                (
+                    f"{orient}.Scrollbar.trough",
+                    {
+                        "sticky": sticky,
+                        "children": [
+                            (
+                                f"{orient}.Scrollbar.thumb",
+                                {"expand": "1", "sticky": "nswe"},
+                            )
+                        ],
+                    },
+                )
+            ],
+        )

@@ -1,16 +1,24 @@
 """Pestaña 6: factores cuadráticos de Bairstow y raíces reales/complejas."""
 
+import re
 import tkinter as tk
 
 from gui import controlador
 from gui.estilo import CARD, MUTED, NAVY
-from gui.formato import formatear_cientifico, formatear_float
+from gui.formato import formatear_cientifico, formatear_float, formatear_polinomio
 from gui.graficos import GraficoBairstow, raices_referencia
 from gui.pestanas.base import PestanaBase
+from gui.widgets import Card
+
+_SUPERINDICES = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
+
+
+def con_superindices(texto):
+    """Convierte x^2, x^10, etc. en x², x¹⁰ usando Unicode."""
+    return re.sub(r"\^(\d+)", lambda m: m.group(1).translate(_SUPERINDICES), texto)
 
 
 def _numero_breve(valor):
-    """Redondea para la tarjeta: enteros limpios y hasta seis decimales."""
     numero = round(float(valor), 6)
     if abs(numero - round(numero)) < 1e-5:
         return str(int(round(numero)))
@@ -19,7 +27,6 @@ def _numero_breve(valor):
 
 
 def _raiz_breve(valor):
-    """Raíz compleja legible, sin ruido numérico en la parte imaginaria."""
     z = complex(valor)
     real = _numero_breve(z.real)
     if abs(z.imag) <= 1e-9:
@@ -35,8 +42,10 @@ class PestanaBairstow(PestanaBase):
     titulo_tabla = "Factores cuadráticos"
     subtitulo_tabla = "(r, s y raíces del factor)"
     grafico_clase = GraficoBairstow
+    pie_en_grafico = False
 
     def construir_entrada(self, parent):
+        self.tabla.max_filas = 6
         self.v_coef = tk.StringVar(value="1, 5, 15, 5, -26")
         self.v_r0 = tk.StringVar(value="1")
         self.v_s0 = tk.StringVar(value="-1")
@@ -49,38 +58,67 @@ class PestanaBairstow(PestanaBase):
             self.v_coef,
             "Acepta enteros, decimales y fracciones: 3/2",
         )
-        self.campo(parent, "Valor inicial  r₀", self.v_r0)
-        self.campo(parent, "Valor inicial  s₀", self.v_s0)
-        self.campo(parent, "Tolerancia  ε", self.v_eps)
-        self.campo(parent, "Máximo de iteraciones", self.v_max)
+        self.fila_campos(
+            parent,
+            [
+                lambda col: self.campo(col, "Valor inicial  r₀", self.v_r0),
+                lambda col: self.campo(col, "Valor inicial  s₀", self.v_s0),
+            ],
+        )
+        self.fila_campos(
+            parent,
+            [
+                lambda col: self.campo(col, "Tolerancia  ε", self.v_eps),
+                lambda col: self.campo(col, "Máximo de iteraciones", self.v_max),
+            ],
+        )
         tk.Label(
             parent,
-            text=(
-                "Busca factores x² − r·x − s.\n"
-                "Al final resuelve las raíces reales y complejas."
-            ),
+            text="Factor x² − r·x − s · raíces reales y complejas",
             font=self.fuentes.small,
             bg=CARD,
             fg=MUTED,
             justify="left",
             anchor="w",
-            wraplength=230,
+            wraplength=300,
         ).pack(fill="x", pady=(10, 0))
         self._configurar_columnas()
 
-    # ------------------------------------------------------------------ columnas
+    def _crear_derecha(self, host):
+        """Tarjeta con el polinomio arriba del gráfico."""
+        self.card_poli = Card(
+            host, r=12, fill="#F4FBF7", outer=CARD,
+            shadow=False, pad=8, autoheight=True,
+        )
+        self.card_poli.pack(fill="x", padx=20, pady=(8, 6))
+
+        self.lbl_polinomio = tk.Label(
+            self.card_poli.inner, text="", font=self.fuentes.h2,
+            bg="#F4FBF7", fg=NAVY, anchor="center", justify="center",
+            wraplength=420,
+        )
+        self.lbl_polinomio.pack(fill="x")
+        self.card_poli.actualizar_alto()
+
+        super()._crear_derecha(host)
+
+    def _mostrar_polinomio(self, coef):
+        texto = con_superindices(formatear_polinomio(coef))
+        self.lbl_polinomio.configure(text=f"P(x) = {texto}")
+        self.card_poli.actualizar_alto()
+
     def _configurar_columnas(self):
         self.tabla.configurar(
             [
-                ("factor", "Factor", 52, "center"),
-                ("iter", "Iter", 44, "center"),
-                ("r", "r", 92, "e"),
-                ("s", "s", 92, "e"),
-                ("raices", "Raíces del factor", 140, "w"),
-            ]
+                ("factor", "Factor", 64, "center"),
+                ("iter", "Iter", 46, "center"),
+                ("r", "r", 88, "center"),
+                ("s", "s", 88, "center"),
+                ("raices", "Raíces", 136, "w"),
+            ],
+            estirar=True,
         )
 
-    # ------------------------------------------------------------------ cálculo
     def _calcular(self):
         self._texto_coef = self.v_coef.get()
         self._coef = controlador.coeficientes_float(self._texto_coef)
@@ -92,20 +130,35 @@ class PestanaBairstow(PestanaBase):
             self.v_max.get(),
         )
 
-    # ------------------------------------------------------------------ filas
-    def _filas(self, pasos):
+    def _filas(self, pasos, raices=()):
         filas = []
         for paso in pasos:
-            raices = paso.get("raices_factor", ())
+            raices_factor = paso.get("raices_factor", ())
             filas.append(
                 {
                     "factor": str(paso.get("factor", "")),
                     "iter": str(paso.get("iter", "")),
                     "r": formatear_float(paso.get("r")),
                     "s": formatear_float(paso.get("s")),
-                    "raices": ", ".join(_raiz_breve(z) for z in raices),
+                    "raices": ", ".join(_raiz_breve(z) for z in raices_factor),
                 }
             )
+
+        # Raíces que no salieron de una iteración (en cero, lineal o el
+        # cuadrático final, resuelto directamente con la fórmula).
+        if raices:
+            cubiertas = sum(len(p.get("raices_factor", ())) for p in pasos)
+            restantes = list(raices)[self._raices_en_cero() + cubiertas:]
+            if restantes:
+                filas.append(
+                    {
+                        "factor": "Resto",
+                        "iter": "—",
+                        "r": "—",
+                        "s": "—",
+                        "raices": ", ".join(_raiz_breve(z) for z in restantes),
+                    }
+                )
         return filas
 
     def _tags(self, filas, pasos):
@@ -123,12 +176,15 @@ class PestanaBairstow(PestanaBase):
                 etiquetas.append(("odd",))
             else:
                 etiquetas.append(())
+
+        # Fila extra de raíces resueltas directamente
+        while len(etiquetas) < len(filas):
+            etiquetas.append(("final",))
         return etiquetas
 
-    # ------------------------------------------------------------------ resultado
     def _mostrar_resultado(self, resultado):
         raices = list(resultado.valor or [])
-        filas = self._filas(resultado.pasos)
+        filas = self._filas(resultado.pasos, raices)
         self.tabla.cargar(filas, self._tags(filas, resultado.pasos))
         self._mostrar_tarjeta()
 
@@ -144,27 +200,22 @@ class PestanaBairstow(PestanaBase):
         if resultado.error is not None:
             detalle += f" · error final {formatear_cientifico(resultado.error)}"
 
-        self.resultado.lbl_principal.configure(
-            font=self.fuentes.big if len(principal) <= 34 else self.fuentes.h2
-        )
+        if len(principal) <= 34:
+            fuente = self.fuentes.big
+        elif len(principal) <= 70:
+            fuente = self.fuentes.h2
+        else:
+            # Listas de muchas raíces: 15 px en negrita ocupa menos alto.
+            fuente = self.fuentes.bold
+        self.resultado.lbl_principal.configure(font=fuente)
         self.resultado.mostrar(
             principal,
             detalle,
-            self._referencia(),
+            "Factores cuadráticos reales/complejos",
             tono="amber" if resultado.avisos else "verde",
         )
         self._dibujar(raices, resultado.pasos)
         self._animar([{"i": i} for i in range(len(resultado.pasos))])
-
-    def _referencia(self):
-        raices = raices_referencia(self._coef)
-        if not raices:
-            return "numpy.roots: sin raíces."
-        ordenadas = sorted(raices, key=lambda z: (round(z.real, 6), round(z.imag, 6)))
-        mostradas = ", ".join(_raiz_breve(z) for z in ordenadas[:6])
-        if len(ordenadas) > 6:
-            mostradas += ", …"
-        return f"Referencia numpy.roots: {mostradas}"
 
     def _mensaje_exito(self, resultado):
         raices = list(resultado.valor or [])
@@ -188,9 +239,9 @@ class PestanaBairstow(PestanaBase):
             f"({', '.join(partes)}), {proceso}."
         )
 
-    # ------------------------------------------------------------------ gráfico
     def _dibujar(self, raices, pasos):
-        """Prepara la curva, el plano complejo y los artistas de la animación."""
+        self._mostrar_polinomio(self._coef)
+
         if not raices:
             self.grafico.limpiar("No hay raíces para mostrar.")
             self._pasos_bairstow = []
@@ -198,55 +249,37 @@ class PestanaBairstow(PestanaBase):
             return
 
         self._pasos_bairstow = list(pasos or [])
-        # Si no hay iteraciones (grado 0/1/2) las raíces se muestran completas.
         self.grafico.dibujar_raices(
             self._coef, raices, mostrar=not self._pasos_bairstow
         )
         ax2 = self.grafico.ax2
 
-        # Rombos huecos: raíces del factor con el (r, s) de la iteración actual.
-        self._prueba_raices = [
-            ax2.plot(
-                [],
-                [],
-                marker="D",
-                color=NAVY,
-                markerfacecolor="none",
-                markeredgewidth=1.1,
-                markersize=7,
-                linestyle="none",
-                visible=False,
-                zorder=8,
-            )[0]
-            for _ in range(2)
-        ]
-        self._estela_factor = ax2.plot(
-            [],
-            [],
-            color=NAVY,
-            lw=0.9,
-            ls=":",
-            alpha=0.7,
-            visible=False,
-            zorder=4,
-        )[0]
-        self._texto_rs = ax2.text(
-            0.02,
-            0.98,
-            "",
-            transform=ax2.transAxes,
-            ha="left",
-            va="top",
-            fontsize=7,
-            color=NAVY,
-            zorder=10,
-        )
+        if ax2 is not None:
+            self._prueba_raices = [
+                ax2.plot(
+                    [], [], marker="D", color=NAVY, markerfacecolor="none",
+                    markeredgewidth=1.1, markersize=7, linestyle="none",
+                    label="Raíz del factor (iteración)" if k == 0 else None,
+                    visible=False, zorder=8
+                )[0] for k in range(2)
+            ]
+            self._estela_factor = [
+                ax2.plot(
+                    [], [], color=NAVY, lw=0.9, ls=":", alpha=0.7,
+                    visible=False, zorder=4
+                )[0] for _ in range(2)
+            ]
+            self.grafico.leyenda_plano()
+        else:
+            self._prueba_raices = []
+            self._estela_factor = []
+
+        self._ultimo_por_factor = {}
         self._factor_actual = None
         self._grupos_raices = []
         if not self._pasos_bairstow:
             return
 
-        # Raíces en 0 extraídas antes de iterar: se revelan desde el inicio.
         n_cero = self._raices_en_cero()
         offset = 0
         if n_cero:
@@ -254,10 +287,10 @@ class PestanaBairstow(PestanaBase):
             self._grupos_raices.append((-1, grupo))
             offset = len(grupo)
 
-        # Cada factor aporta dos raíces cuando termina su refinamiento.
         ultimo_paso = {}
         for i, paso in enumerate(self._pasos_bairstow):
             ultimo_paso[paso.get("factor")] = i
+        self._ultimo_por_factor = dict(ultimo_paso)
         for factor in sorted(ultimo_paso, key=lambda f: (f is None, f)):
             grupo = list(range(offset, min(offset + 2, len(raices))))
             if not grupo:
@@ -265,14 +298,12 @@ class PestanaBairstow(PestanaBase):
             self._grupos_raices.append((ultimo_paso[factor], grupo))
             offset += len(grupo)
 
-        # Lo que queda al final (cuadrática o lineal) se revela en el último paso.
         if offset < len(raices):
             self._grupos_raices.append(
                 (len(self._pasos_bairstow) - 1, list(range(offset, len(raices))))
             )
 
     def _raices_en_cero(self):
-        """Cantidad de factores x que el núcleo extrae antes de Bairstow."""
         coef = list(self._coef)
         cantidad = 0
         while len(coef) > 1 and coef[0] == 0:
@@ -281,7 +312,6 @@ class PestanaBairstow(PestanaBase):
         return cantidad
 
     def _aplicar_paso(self, indice):
-        """Revela las raíces de los factores ya resueltos y mueve (r, s)."""
         super()._aplicar_paso(indice)
         if not getattr(self, "_pasos_bairstow", []):
             return
@@ -300,40 +330,52 @@ class PestanaBairstow(PestanaBase):
 
         for artista in getattr(self, "_prueba_raices", []):
             artista.set_visible(False)
-        self._estela_factor.set_visible(False)
-        self._texto_rs.set_text("")
+        for linea in getattr(self, "_estela_factor", []):
+            linea.set_visible(False)
 
         if indice < 0 or indice >= len(self._pasos_bairstow):
             self.grafico.redibujar()
             return
 
         paso = self._pasos_bairstow[indice]
-        actuales = list(paso.get("raices_actuales") or ())
-        for artista, z in zip(self._prueba_raices, actuales):
+        factor = paso.get("factor")
+
+        # En la última iteración del factor sus raíces finales ya se dibujan
+        # como puntos fijos: los rombos de prueba las taparían.
+        if indice == getattr(self, "_ultimo_por_factor", {}).get(factor):
+            self.grafico.redibujar()
+            return
+
+        for artista, z in zip(self._prueba_raices, self._raices_siguientes(paso)):
             artista.set_data([z.real], [z.imag])
             artista.set_visible(True)
 
-        factor = paso.get("factor")
-        estela_x = []
-        estela_y = []
+        trayectorias = [([], []), ([], [])]
         for anterior in self._pasos_bairstow[: indice + 1]:
             if anterior.get("factor") != factor:
                 continue
-            raices_j = list(anterior.get("raices_actuales") or ())
-            if raices_j:
-                estela_x.append(raices_j[0].real)
-                estela_y.append(raices_j[0].imag)
-        if len(estela_x) > 1:
-            self._estela_factor.set_data(estela_x, estela_y)
-            self._estela_factor.set_visible(True)
+            for k, z in enumerate(self._raices_siguientes(anterior)[:2]):
+                trayectorias[k][0].append(z.real)
+                trayectorias[k][1].append(z.imag)
 
-        nota = " · perturbado" if paso.get("perturbado") else ""
-        self._texto_rs.set_text(
-            f"Factor {factor} · iter {paso.get('iter', '')}\n"
-            f"r = {formatear_float(paso.get('r'))} · "
-            f"s = {formatear_float(paso.get('s'))}{nota}"
-        )
+        for linea, (xs, ys) in zip(getattr(self, "_estela_factor", []), trayectorias):
+            if len(xs) > 1:
+                linea.set_data(xs, ys)
+                linea.set_visible(True)
+
         self.grafico.redibujar()
+
+    @staticmethod
+    def _raices_siguientes(paso):
+        """Raíces del factor con (r + dr, s + ds): la estimación tras la iteración."""
+        try:
+            return list(
+                controlador.raices_del_factor(
+                    paso["r"] + paso["dr"], paso["s"] + paso["ds"]
+                )
+            )
+        except (KeyError, TypeError, ValueError):
+            return list(paso.get("raices_actuales") or ())
 
     def _mostrar_pasos_error(self, pasos):
         self._configurar_columnas()

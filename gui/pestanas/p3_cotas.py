@@ -1,23 +1,33 @@
 """Pestaña 3: cotas superior e inferior de las raíces reales."""
 
+import re
 import tkinter as tk
+from fractions import Fraction
 
 from gui import controlador
-from gui.estilo import AMBER_L, CARD, GREEN_L, MUTED, NAVY
-from gui.formato import formatear_fraccion
-from gui.graficos import texto_referencia
+from gui.estilo import AMBER_L, CARD, GREEN_L, MUTED, NAVY, GREEN, BG
+from gui.formato import formatear_fraccion, formatear_float, formatear_polinomio
 from gui.pestanas.base import PestanaBase
+from gui.widgets import Card
+
+_SUPERINDICES = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
+
+
+def con_superindices(texto):
+    """Convierte x^2, x^10, etc. en x², x¹⁰ usando Unicode."""
+    return re.sub(r"\^(\d+)", lambda m: m.group(1).translate(_SUPERINDICES), texto)
 
 
 class PestanaCotas(PestanaBase):
     titulo_tabla = "Cotas por método"
     subtitulo_tabla = "(valores exactos)"
+    usa_animacion = False
+    pie_en_grafico = False
 
     METODOS = (
         ("lagrange", "Lagrange"),
         ("laguerre", "Laguerre"),
         ("newton", "Newton"),
-        ("implicacion", "Implicación"),
     )
 
     def construir_entrada(self, parent):
@@ -35,68 +45,67 @@ class PestanaCotas(PestanaBase):
                 "Cada método acota las raíces positivas (+) y las negativas (−).\n"
                 "La tarjeta muestra la intersección más ajustada."
             ),
-            font=self.fuentes.small,
+            font=self.fuentes.normal,
             bg=CARD,
             fg=MUTED,
             justify="left",
             anchor="w",
             wraplength=230,
         ).pack(fill="x", pady=(10, 0))
-        self._configurar_columnas()
 
-    # ------------------------------------------------------------------ columnas
-    def _configurar_columnas(self):
-        self.tabla.configurar(
-            [
-                ("metodo", "Método", 100, "w"),
-                ("inf_pos", "Inf. (+)", 80, "e"),
-                ("sup_pos", "Sup. (+)", 80, "e"),
-                ("inf_neg", "Inf. (−)", 80, "e"),
-                ("sup_neg", "Sup. (−)", 80, "e"),
-            ]
+    def _crear_derecha(self, host):
+        """Tarjeta con el polinomio arriba del gráfico."""
+        self.card_poli = Card(
+            host, r=12, fill="#F4FBF7", outer=CARD,
+            shadow=False, pad=8, autoheight=True,
         )
+        self.card_poli.pack(fill="x", padx=20, pady=(8, 6))
 
-    # ------------------------------------------------------------------ cálculo
+        self.lbl_polinomio = tk.Label(
+            self.card_poli.inner, text="", font=self.fuentes.h2,
+            bg="#F4FBF7", fg=NAVY, anchor="center", justify="center",
+            wraplength=420,
+        )
+        self.lbl_polinomio.pack(fill="x")
+        self.card_poli.actualizar_alto()
+
+        super()._crear_derecha(host)
+
+    def _mostrar_polinomio(self, coef):
+        texto = con_superindices(formatear_polinomio(coef))
+        self.lbl_polinomio.configure(text=f"P(x) = {texto}")
+        self.card_poli.actualizar_alto()
+
+    def _construir_esquema(self):
+        super()._construir_esquema()
+        if self.usa_tabla:
+            self.tabla.pack_forget()
+            self.panel_tarjetas = tk.Frame(self.card_centro.inner, bg=CARD)
+            self.panel_tarjetas.pack(side="top", fill="both", expand=True)
+            self.panel_tarjetas.columnconfigure(0, weight=1)
+
     def _calcular(self):
         self._texto_coef = self.v_coef.get()
         self._coef = controlador.coeficientes_float(self._texto_coef)
         return controlador.cotas(self._texto_coef)
 
-    # ------------------------------------------------------------------ filas
-    def _filas(self, valor):
-        filas = []
-        for clave, nombre in self.METODOS:
-            cotas = valor.get(clave, {})
-            inf_pos, sup_pos = self._par(cotas, "inf_pos", "sup_pos")
-            inf_neg, sup_neg = self._par(cotas, "inf_neg", "sup_neg")
-            filas.append(
-                {
-                    "metodo": nombre,
-                    "inf_pos": inf_pos,
-                    "sup_pos": sup_pos,
-                    "inf_neg": inf_neg,
-                    "sup_neg": sup_neg,
-                }
-            )
-        return filas
+    def _formatear_cota(self, valor):
+        if valor == 0:
+            return "0"
+        texto_frac = formatear_fraccion(valor)
+        try:
+            if isinstance(valor, Fraction) and valor.denominator != 1:
+                return f"{texto_frac} (≈{formatear_float(float(valor), 2)})"
+            elif isinstance(valor, float):
+                return formatear_float(valor, 2)
+            return texto_frac
+        except Exception:
+            return texto_frac
 
-    def _par(self, cotas, clave_inf, clave_sup):
-        """Muestra '—' cuando el método no acota raíces de ese signo."""
-        inf = cotas.get(clave_inf, 0)
-        sup = cotas.get(clave_sup, 0)
-        if inf == 0 and sup == 0:
-            return "—", "—"
-        return formatear_fraccion(inf), formatear_fraccion(sup)
-
-    def _tags(self, filas):
-        return [("odd",) if i % 2 else () for i in range(len(filas))]
-
-    # ------------------------------------------------------------------ resultado
     def _mostrar_resultado(self, resultado):
         valor = resultado.valor
-        filas = self._filas(valor)
-        self.tabla.cargar(filas, self._tags(filas))
         self._mostrar_tarjeta()
+        self._dibujar_tarjetas(valor)
 
         ajustado = valor["ajustado"]
         tono = "amber" if resultado.avisos else "verde"
@@ -122,14 +131,66 @@ class PestanaCotas(PestanaBase):
         self.resultado.mostrar(
             principal,
             detalle,
-            texto_referencia(self._coef),
+            "",
             tono=tono,
         )
         self._dibujar(ajustado, valor)
-        self._animar(
-            [{"metodo": i} for i in range(len(self.METODOS))]
-            + [{"ajustado": True}]
-        )
+
+    def _dibujar_tarjetas(self, valor):
+        for widget in self.panel_tarjetas.winfo_children():
+            widget.destroy()
+
+        for i, (clave, nombre) in enumerate(self.METODOS):
+            cotas = valor.get(clave, {})
+            rango_pos = self._rango(cotas.get("inf_pos", 0), cotas.get("sup_pos", 0))
+            rango_neg = self._rango(cotas.get("inf_neg", 0), cotas.get("sup_neg", 0))
+
+            card = Card(
+                self.panel_tarjetas, r=12, fill="#F8FAF9", outer=CARD,
+                shadow=False, pad=12, autoheight=True,
+            )
+            card.grid(row=i, column=0, sticky="ew", pady=5)
+
+            inner = card.inner
+
+            tk.Label(
+                inner, text=nombre, font=self.fuentes.h2,
+                bg="#F8FAF9", fg=NAVY, anchor="w",
+            ).pack(anchor="w", pady=(0, 6))
+
+            grid = tk.Frame(inner, bg="#F8FAF9")
+            grid.pack(fill="x")
+            grid.columnconfigure(0, weight=1)
+            grid.columnconfigure(1, weight=1)
+
+            # Negativas en la columna 0 (Izquierda)
+            tk.Label(
+                grid, text="Negativas", font=self.fuentes.normal,
+                bg="#F8FAF9", fg="#D64545", anchor="w",
+            ).grid(row=0, column=0, sticky="w")
+            tk.Label(
+                grid, text=rango_neg, font=self.fuentes.bold,
+                bg="#F8FAF9", fg="#17303F", anchor="w",
+            ).grid(row=1, column=0, sticky="w", pady=(2, 0))
+
+            # Positivas en la columna 1 (Derecha)
+            tk.Label(
+                grid, text="Positivas", font=self.fuentes.normal,
+                bg="#F8FAF9", fg=GREEN, anchor="w",
+            ).grid(row=0, column=1, sticky="w")
+            tk.Label(
+                grid, text=rango_pos, font=self.fuentes.bold,
+                bg="#F8FAF9", fg="#17303F", anchor="w",
+            ).grid(row=1, column=1, sticky="w", pady=(2, 0))
+
+            card.actualizar_alto()
+
+        self.card_centro.actualizar_alto()
+
+    def _rango(self, inf, sup):
+        if inf == 0 and sup == 0:
+            return "—"
+        return f"[{formatear_fraccion(inf)}, {formatear_fraccion(sup)}]"
 
     def _intervalo(self, a, b):
         return f"[{formatear_fraccion(a)}, {formatear_fraccion(b)}]"
@@ -151,9 +212,9 @@ class PestanaCotas(PestanaBase):
             + "."
         )
 
-    # ------------------------------------------------------------------ gráfico
     def _dibujar(self, ajustado, valor):
-        """Dibuja la curva y prepara las bandas de cada método."""
+        self._mostrar_polinomio(self._coef)
+
         puntos = []
         if not ajustado["sin_raices"]:
             for intervalo in (ajustado["neg"], ajustado["pos"]):
@@ -162,99 +223,20 @@ class PestanaCotas(PestanaBase):
         elif ajustado["cero_es_raiz"]:
             puntos.append(0.0)
 
-        titulo = f"P(x) = {self._texto_coef.strip()[:42]}"
-        self.grafico.dibujar(self._coef, puntos=puntos, titulo=titulo)
+        self.grafico.dibujar(self._coef, puntos=puntos, titulo="")
         ax = self.grafico.ax
-        self._bandas_metodo = []
 
-        for clave, _nombre in self.METODOS:
-            cotas = valor.get(clave, {})
-            bandas = []
-            sup_pos = cotas.get("sup_pos", 0)
-            inf_pos = cotas.get("inf_pos", 0)
-            inf_neg = cotas.get("inf_neg", 0)
-            sup_neg = cotas.get("sup_neg", 0)
-
-            if sup_pos > 0:
-                a, b = float(inf_pos), float(sup_pos)
-                if b > a:
-                    bandas.append(
-                        ax.axvspan(
-                            a,
-                            b,
-                            color=GREEN_L,
-                            alpha=0.55,
-                            visible=False,
-                            zorder=1,
-                        )
-                    )
-            if inf_neg < 0:
-                a, b = float(inf_neg), float(sup_neg)
-                if b > a:
-                    bandas.append(
-                        ax.axvspan(
-                            a,
-                            b,
-                            color=AMBER_L,
-                            alpha=0.55,
-                            visible=False,
-                            zorder=1,
-                        )
-                    )
-            self._bandas_metodo.append(bandas)
-
-        self._bandas_ajustadas = []
         if not ajustado["sin_raices"]:
-            for intervalo, color in (
-                (ajustado["neg"], AMBER_L),
-                (ajustado["pos"], GREEN_L),
-            ):
-                if not intervalo:
-                    continue
+            for intervalo, color in ((ajustado["neg"], AMBER_L), (ajustado["pos"], GREEN_L)):
+                if not intervalo: continue
                 a, b = (float(x) for x in intervalo)
-                self._bandas_ajustadas.append(
-                    ax.axvspan(
-                        a,
-                        b,
-                        color=color,
-                        alpha=0.9,
-                        visible=False,
-                        zorder=1,
-                    )
-                )
+                ax.axvspan(a, b, color=color, alpha=0.9, visible=True, zorder=1)
                 for x in (a, b):
-                    self._bandas_ajustadas.append(
-                        ax.axvline(
-                            x,
-                            color=NAVY,
-                            lw=0.9,
-                            ls=":",
-                            visible=False,
-                            zorder=3,
-                        )
-                    )
+                    ax.axvline(x, color=NAVY, lw=0.9, ls=":", visible=True, zorder=3)
         elif ajustado["cero_es_raiz"]:
             self.grafico.raiz(0.0, etiqueta="Raíz 0")
 
-        # Leyenda mínima: el color ya está explicado en la tarjeta.
-        ax.plot([], [], color=GREEN_L, lw=8, label="Cotas positivas")
-        ax.plot([], [], color=AMBER_L, lw=8, label="Cotas negativas")
+        ax.plot([], [], color=GREEN_L, lw=8, label="Intervalo acotado (+)")
+        ax.plot([], [], color=AMBER_L, lw=8, label="Intervalo acotado (−)")
         self.grafico.finalizar(ubicacion="best")
-
-    def _aplicar_paso(self, indice):
-        """Muestra una banda por método y, al final, la ajustada."""
-        if indice < len(self.METODOS):
-            self.tabla.seleccionar(indice)
-            for i, bandas in enumerate(getattr(self, "_bandas_metodo", [])):
-                for banda in bandas:
-                    banda.set_visible(i <= indice)
-            for banda in getattr(self, "_bandas_ajustadas", []):
-                banda.set_visible(False)
-        else:
-            self.tabla.seleccionar(len(self.METODOS) - 1)
-            for bandas in getattr(self, "_bandas_metodo", []):
-                for banda in bandas:
-                    banda.set_visible(False)
-            for banda in getattr(self, "_bandas_ajustadas", []):
-                banda.set_visible(True)
         self.grafico.redibujar()

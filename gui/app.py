@@ -31,7 +31,7 @@ class App(tk.Tk):
         super().__init__()
         self.title("Raíces de Polinomios")
         self.configure(bg=BG)
-        self.minsize(1100, 700)
+        self.minsize(1100, 680)
         self.fuentes = Fuentes(self)
         crear_estilos(self, self.fuentes)
         configurar_fuente(self.fuentes.familia)
@@ -86,8 +86,15 @@ class App(tk.Tk):
         ]
 
     def _crear_estado(self):
-        self.status = Card(self, r=12, fill=CARD, outer=BG, shadow=False, pad=11)
-        self.status.configure(height=70)
+        self.status = Card(
+            self,
+            r=12,
+            fill=CARD,
+            outer=BG,
+            shadow=False,
+            pad=10,
+            autoheight=True,
+        )
         self.status.grid(row=3, column=0, sticky="ew", padx=10, pady=(0, 8))
         fila = tk.Frame(self.status.inner, bg=CARD)
         fila.pack(fill="both", expand=True)
@@ -114,6 +121,10 @@ class App(tk.Tk):
             wraplength=1000,
         )
         self.st_msg.pack(anchor="w")
+        self.status.inner.bind("<Configure>", self._ajustar_wrap_estado, add="+")
+
+    def _ajustar_wrap_estado(self, evento):
+        self.st_msg.configure(wraplength=max(evento.width - 56, 320))
 
     # ------------------------------------------------------------------ encabezado
     def _dibujar_encabezado(self, evento):
@@ -168,9 +179,13 @@ class App(tk.Tk):
 
     def _centrar(self):
         try:
-            ancho, alto = 1280, 800
-            x = max(0, (self.winfo_screenwidth() - ancho) // 2)
-            y = max(0, (self.winfo_screenheight() - alto) // 2)
+            pantalla_w = self.winfo_screenwidth()
+            pantalla_h = self.winfo_screenheight()
+            # Deja aire para la barra de tareas en 1366x768 y aprovecha 1920x1080.
+            ancho = min(1440, max(1100, pantalla_w - 80))
+            alto = min(920, max(680, pantalla_h - 120))
+            x = max(0, (pantalla_w - ancho) // 2)
+            y = max(0, (pantalla_h - alto) // 2)
             self.geometry(f"{ancho}x{alto}+{x}+{y}")
         except tk.TclError:
             self.geometry("1280x800")
