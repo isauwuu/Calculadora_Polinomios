@@ -19,7 +19,6 @@ from gui.estilo import (
     GREEN_L,
     INK,
     LINE,
-    MUTED,
     NAVY,
     ORANGE,
     RED,
@@ -338,19 +337,6 @@ class Seg(tk.Canvas):
             )
 
 
-class Pill(tk.Canvas):
-    """Etiqueta compacta con fondo redondeado (para avisos breves)."""
-
-    def __init__(self, master, text, icon, font, fill, outline, fg, bg=CARD, height=34):
-        self.font = font
-        ancho = icon.width() + 8 + font.measure(text) + 32
-        super().__init__(master, width=ancho, height=height, bg=bg, highlightthickness=0, bd=0)
-        self._imagen = imagenes.photo(imagenes.rounded_image(ancho, height, 11, fill, outline, 1, 0, False, bg))
-        self.create_image(0, 0, image=self._imagen, anchor="nw")
-        self.create_image(14, height / 2, image=icon, anchor="w")
-        self.create_text(14 + icon.width() + 8, height / 2, text=text, anchor="w", font=font, fill=fg)
-
-
 class TabBar(tk.Frame):
     """Barra de seis pestañas con círculo numerado y subrayado verde."""
 
@@ -388,6 +374,8 @@ class TabBar(tk.Frame):
 class TablaPasos(tk.Frame):
     """Tabla genérica con alto según las filas y barras solo si hacen falta."""
 
+    TECLAS_NAVEGACION = ("Up", "Down", "Home", "End", "Prior", "Next")
+
     def __init__(self, master, fuentes, height=8, max_filas=12):
         super().__init__(master, bg=CARD)
         self.fuentes = fuentes
@@ -396,6 +384,7 @@ class TablaPasos(tk.Frame):
         self._barra_pendiente = None
         self._v_visible = False
         self._h_visible = False
+        self._seguir_paso = True
         self.tree = ttk.Treeview(
             self, show="headings", style="Calc.Treeview", selectmode="browse",
             height=min(height, max_filas),
@@ -404,7 +393,10 @@ class TablaPasos(tk.Frame):
         self.marco_v.pack_propagate(False)
         self.marco_h = tk.Frame(self, bg=CARD, height=8)
         self.marco_h.pack_propagate(False)
-        self.vscroll = ttk.Scrollbar(self.marco_v, orient="vertical", command=self.tree.yview, style="Vertical.TScrollbar")
+        self.vscroll = ttk.Scrollbar(
+            self.marco_v, orient="vertical", command=self._yview_usuario,
+            style="Vertical.TScrollbar",
+        )
         self.vscroll.pack(fill="both", expand=True)
         self.hscroll = ttk.Scrollbar(self.marco_h, orient="horizontal", command=self.tree.xview, style="Horizontal.TScrollbar")
         self.hscroll.pack(fill="both", expand=True)
@@ -430,6 +422,17 @@ class TablaPasos(tk.Frame):
         self.tree.bind("<ButtonRelease-1>", self._al_clic)
         self.tree.bind("<KeyRelease>", self._al_tecla)
         self.tree.bind("<Configure>", lambda _: self._programar_barras(), add="+")
+        self.tree.bind("<MouseWheel>", self._marcar_scroll_usuario, add="+")
+        self.tree.bind("<Button-4>", self._marcar_scroll_usuario, add="+")
+        self.tree.bind("<Button-5>", self._marcar_scroll_usuario, add="+")
+
+    def _marcar_scroll_usuario(self, _evento=None):
+        """El usuario movió la vista: la animación deja de arrastrarla."""
+        self._seguir_paso = False
+
+    def _yview_usuario(self, *args):
+        self._marcar_scroll_usuario()
+        self.tree.yview(*args)
 
     def configurar(self, columnas, estirar=True):
         self.limpiar()
@@ -441,6 +444,7 @@ class TablaPasos(tk.Frame):
             self.tree.column(clave, width=ancho, minwidth=ancho if not estirar else max(40, ancho // 2), anchor=alineacion, stretch=estirar)
 
     def cargar(self, filas, tags=None):
+        self._seguir_paso = True
         self.limpiar()
         if not self._columnas:
             return
@@ -517,7 +521,8 @@ class TablaPasos(tk.Frame):
             item = hijos[indice]
             self.tree.selection_set(item)
             self.tree.focus(item)
-            self.tree.see(item)
+            if self._seguir_paso:
+                self.tree.see(item)
         else:
             seleccion = self.tree.selection()
             if seleccion:
@@ -532,6 +537,7 @@ class TablaPasos(tk.Frame):
         fila = self.tree.identify_row(evento.y) if evento is not None else ""
         if not fila:
             return
+        self._marcar_scroll_usuario()
         try:
             indice = self.tree.index(fila)
         except tk.TclError:
@@ -539,9 +545,11 @@ class TablaPasos(tk.Frame):
         self.al_elegir_paso(indice)
 
     def _al_tecla(self, evento=None):
+        if evento is not None and evento.keysym in self.TECLAS_NAVEGACION:
+            self._marcar_scroll_usuario()
         if self.al_elegir_paso is None or evento is None:
             return
-        if evento.keysym not in ("Up", "Down", "Home", "End", "Prior", "Next"):
+        if evento.keysym not in self.TECLAS_NAVEGACION:
             return
         seleccion = self.tree.selection()
         if not seleccion:

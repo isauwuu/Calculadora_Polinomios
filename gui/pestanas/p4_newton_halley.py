@@ -1,27 +1,19 @@
 """Pestaña 4: Newton-Raphson-Horner y Halley."""
 
-import re
 import tkinter as tk
 
 from gui import controlador
-from gui.estilo import CARD, NAVY
-from gui.formato import formatear_float, formatear_polinomio
+from gui.estilo import CARD
+from gui.formato import formatear_float
 from gui.graficos import texto_referencia
 from gui.pestanas.base import PestanaBase
-from gui.widgets import Card
-
-_SUPERINDICES = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
-
-
-def con_superindices(texto):
-    """Convierte x^2, x^10, etc. en x², x¹⁰ usando Unicode."""
-    return re.sub(r"\^(\d+)", lambda m: m.group(1).translate(_SUPERINDICES), texto)
 
 
 class PestanaNewtonHalley(PestanaBase):
     titulo_tabla = "Iteraciones"
     subtitulo_tabla = ""
     pie_en_grafico = False
+    tarjeta_polinomio = True
 
     def construir_entrada(self, parent):
         self.tabla.max_filas = 6
@@ -60,29 +52,6 @@ class PestanaNewtonHalley(PestanaBase):
         ).pack(fill="x", pady=(12, 0))
 
         self._configurar_columnas("Newton")
-
-    def _crear_derecha(self, host):
-        """Tarjeta con el polinomio arriba del gráfico."""
-        self.card_poli = Card(
-            host, r=12, fill="#F4FBF7", outer=CARD,
-            shadow=False, pad=8, autoheight=True,
-        )
-        self.card_poli.pack(fill="x", padx=20, pady=(8, 6))
-
-        self.lbl_polinomio = tk.Label(
-            self.card_poli.inner, text="", font=self.fuentes.h2,
-            bg="#F4FBF7", fg=NAVY, anchor="center", justify="center",
-            wraplength=420,
-        )
-        self.lbl_polinomio.pack(fill="x")
-        self.card_poli.actualizar_alto()
-
-        super()._crear_derecha(host)
-
-    def _mostrar_polinomio(self, coef):
-        texto = con_superindices(formatear_polinomio(coef))
-        self.lbl_polinomio.configure(text=f"P(x) = {texto}")
-        self.card_poli.actualizar_alto()
 
     def _configurar_columnas(self, metodo):
         # Usamos caracteres Unicode para los subíndices y evitar los {}

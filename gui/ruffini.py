@@ -6,7 +6,7 @@ from tkinter import ttk
 import traceback
 
 from gui import imagenes
-from gui.estilo import CARD, INK, MUTED, NAVY, ORANGE, GREEN, GREEN_L, LINE, AMBER
+from gui.estilo import CARD, INK, MUTED, NAVY, GREEN, LINE, AMBER
 from gui.esquema import poly_texto, termino
 
 VERDE_FONDO = "#F4FBF7"

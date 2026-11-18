@@ -2,6 +2,10 @@
 
 from fractions import Fraction
 
+from core.polinomio import Polinomio
+from metodos.division import dividir, horner_cuadratico
+from metodos.evaluacion import horner_fraction
+
 _SUP = "⁰¹²³⁴⁵⁶⁷⁸⁹"
 
 
@@ -73,31 +77,30 @@ def _identidad(a, d, cociente, resto, nom_c="Q"):
     return partes, c_txt, r_txt
 
 
+def _a_polinomio(coef_alto):
+    """Polinomio de `metodos` a partir de coeficientes de mayor a menor grado."""
+    return Polinomio(list(reversed(coef_alto)))
+
+
 def _division_larga(a, d, titulo, nota, nom_p, nom_d):
     """División larga estándar (como en el cuaderno)."""
     n, m = len(a) - 1, len(d) - 1
-    cur = {n - i: v for i, v in enumerate(a) if v != 0}
-    dividendo = dict(cur)
-    cociente = [Fraction(0)] * (n - m + 1)
+    resultado = dividir(_a_polinomio(a), _a_polinomio(d))
+    q_poly, r_poly = resultado.valor
+    cociente = list(reversed(q_poly.coef))
+    resto = list(reversed(r_poly.coef))
+    dividendo = {n - i: v for i, v in enumerate(a) if v != 0}
+
     pasos = []
+    for paso in resultado.pasos:
+        factor = paso["factor"]
+        if factor == 0:
+            continue
+        g = paso["k"]
+        prod = {m - j + g: -(dv * factor) for j, dv in enumerate(d) if dv != 0}
+        nuevo = {e: v for e, v in enumerate(paso["resto"]) if v != 0}
+        pasos.append({"q": factor, "grado": g, "prod": prod, "resto": nuevo})
 
-    while cur and max(cur) >= m:
-        gc = max(cur)
-        q = cur[gc] / d[0]
-        g = gc - m
-        cociente[n - m - g] = q
-        prod = {m - i + g: dv * q for i, dv in enumerate(d) if dv != 0}
-        nuevo = dict(cur)
-        for e, v in prod.items():
-            r = nuevo.get(e, Fraction(0)) - v
-            if r == 0:
-                nuevo.pop(e, None)
-            else:
-                nuevo[e] = r
-        pasos.append({"q": q, "grado": g, "prod": {e: -v for e, v in prod.items()}, "resto": nuevo})
-        cur = nuevo
-
-    resto = [cur.get(e, Fraction(0)) for e in range(max(cur), -1, -1)] if cur else [Fraction(0)]
     ident, c_txt, r_txt = _identidad(a, d, cociente, resto)
     esq = {
         "tipo": "larga", "n": n, "m": m,
@@ -129,19 +132,29 @@ def esquema_division(coef, divisor, titulo=None, nota=None, *,
 
     # --- Esquema matricial (Ruffini / Horner) ---
     lead = d[0]
+    p = _a_polinomio(a)
+    nq = n - m + 1
+
+    if m == 1:
+        w = list(reversed(horner_fraction(p, -d[1] / lead).pasos[0]["b"]))
+    elif m == 2:
+        coef_h = horner_cuadratico(p, d[1] / lead, d[2] / lead).pasos[0]["c"]
+        w = list(reversed(coef_h))
+    else:
+        q_poly, r_poly = dividir(p, _a_polinomio(d)).valor
+        q_alto = list(reversed(q_poly.coef))
+        r_alto = list(reversed(r_poly.coef))
+        q_alto = [Fraction(0)] * (nq - len(q_alto)) + q_alto
+        r_alto = [Fraction(0)] * (m - len(r_alto)) + r_alto
+        w = [lead * v for v in q_alto] + r_alto
+
     mon = [c / lead for c in d]
     mult = [-mon[j] for j in range(1, m + 1)]
-    w = list(a)
     prods = [[""] * (n + 1) for _ in range(m)]
+    for j in range(1, m + 1):
+        for k in range(nq):
+            prods[j - 1][k + j] = fmt(w[k] * mult[j - 1])
 
-    for k in range(n - m + 1):
-        q = w[k]
-        for j in range(1, m + 1):
-            p = q * mult[j - 1]
-            prods[j - 1][k + j] = fmt(p)
-            w[k + j] += p
-
-    nq = n - m + 1
     tabla_q = w[:nq]
     resto = w[nq:]
     cociente = [q / lead for q in tabla_q]
@@ -171,45 +184,6 @@ def esquema_division(coef, divisor, titulo=None, nota=None, *,
         esq["nota"] = f"{nota}  {aviso}" if nota else aviso
 
     return esq, cociente, resto
-
-
-def esquema_evaluacion_directa(coef, alpha):
-    a = _limpiar(coef)
-    alpha = Fraction(alpha)
-    n = len(a) - 1
-    pot, term = [], []
-    total = Fraction(0)
-    sumandos = []
-    for i, c in enumerate(a):
-        e = n - i
-        t = c * alpha ** e
-        total += t
-        pot.append(fmt(alpha ** e))
-        term.append(fmt(t))
-        cs = f"({fmt(c)})" if c < 0 else fmt(c)
-        if e == 0:
-            sumandos.append(cs)
-        elif e == 1:
-            sumandos.append(f"{cs}·({fmt(alpha)})")
-        else:
-            sumandos.append(f"{cs}·({fmt(alpha)}){_sup(e)}")
-
-    filas = [
-        {"etiqueta": "aᵢ", "celdas": [fmt(c) for c in a], "tipo": "datos"},
-        {"etiqueta": "αⁱ", "celdas": pot, "tipo": "producto"},
-        {"etiqueta": "aᵢ·αⁱ", "celdas": term, "tipo": "producto"},
-    ]
-    esq = {
-        "tipo": "matricial", "titulo": "Evaluación directa", "filas": filas,
-        "cociente": None, "resto": None,
-        "nota": f"P(α) = suma de la última fila = {fmt(total)}",
-        "cabecera": [("", f"P(x) = {poly_texto(a)}"),
-                     ("", f"α = {fmt(alpha)}")],
-        "identidad": [(f"P({fmt(alpha)})", "p"), (" = ", "t"), (" + ".join(sumandos), "t"),
-                      (" = ", "t"), (fmt(total), "r")],
-        "q_txt": None, "r_txt": fmt(total),
-    }
-    return esq, total
 
 
 def esquema_horner_doble(coef, alpha):

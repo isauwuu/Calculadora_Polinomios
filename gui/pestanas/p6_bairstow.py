@@ -1,21 +1,12 @@
 """Pestaña 6: factores cuadráticos de Bairstow y raíces reales/complejas."""
 
-import re
 import tkinter as tk
 
 from gui import controlador
 from gui.estilo import CARD, MUTED, NAVY
-from gui.formato import formatear_cientifico, formatear_float, formatear_polinomio
-from gui.graficos import GraficoBairstow, raices_referencia
+from gui.formato import formatear_cientifico, formatear_float
+from gui.graficos import GraficoBairstow
 from gui.pestanas.base import PestanaBase
-from gui.widgets import Card
-
-_SUPERINDICES = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
-
-
-def con_superindices(texto):
-    """Convierte x^2, x^10, etc. en x², x¹⁰ usando Unicode."""
-    return re.sub(r"\^(\d+)", lambda m: m.group(1).translate(_SUPERINDICES), texto)
 
 
 def _numero_breve(valor):
@@ -43,9 +34,10 @@ class PestanaBairstow(PestanaBase):
     subtitulo_tabla = "(r, s y raíces del factor)"
     grafico_clase = GraficoBairstow
     pie_en_grafico = False
+    tarjeta_polinomio = True
 
     def construir_entrada(self, parent):
-        self.tabla.max_filas = 6
+        self.tabla.max_filas = 12
         self.v_coef = tk.StringVar(value="1, 5, 15, 5, -26")
         self.v_r0 = tk.StringVar(value="1")
         self.v_s0 = tk.StringVar(value="-1")
@@ -83,29 +75,6 @@ class PestanaBairstow(PestanaBase):
             wraplength=300,
         ).pack(fill="x", pady=(10, 0))
         self._configurar_columnas()
-
-    def _crear_derecha(self, host):
-        """Tarjeta con el polinomio arriba del gráfico."""
-        self.card_poli = Card(
-            host, r=12, fill="#F4FBF7", outer=CARD,
-            shadow=False, pad=8, autoheight=True,
-        )
-        self.card_poli.pack(fill="x", padx=20, pady=(8, 6))
-
-        self.lbl_polinomio = tk.Label(
-            self.card_poli.inner, text="", font=self.fuentes.h2,
-            bg="#F4FBF7", fg=NAVY, anchor="center", justify="center",
-            wraplength=420,
-        )
-        self.lbl_polinomio.pack(fill="x")
-        self.card_poli.actualizar_alto()
-
-        super()._crear_derecha(host)
-
-    def _mostrar_polinomio(self, coef):
-        texto = con_superindices(formatear_polinomio(coef))
-        self.lbl_polinomio.configure(text=f"P(x) = {texto}")
-        self.card_poli.actualizar_alto()
 
     def _configurar_columnas(self):
         self.tabla.configurar(
@@ -242,6 +211,9 @@ class PestanaBairstow(PestanaBase):
             self.grafico.limpiar("No hay raíces para mostrar.")
             self._pasos_bairstow = []
             self._grupos_raices = []
+            self._prueba_raices = []
+            self._estela_factor = []
+            self._prueba_reales = []
             return
 
         self._pasos_bairstow = list(pasos or [])
@@ -250,9 +222,19 @@ class PestanaBairstow(PestanaBase):
         )
         ax2 = self.grafico.ax2
 
+        self._prueba_reales = []
+        for _ in range(2):
+            linea = self.grafico.ax.plot(
+                [], [], marker="D", color=NAVY, markerfacecolor=NAVY,
+                markeredgewidth=1.1, markersize=7, linestyle="none",
+                zorder=8
+            )[0]
+            linea.set_visible(False)
+            self._prueba_reales.append(linea)
+
         if ax2 is not None:
             self._prueba_raices = []
-            for k in range(2):
+            for _ in range(2):
                 linea = ax2.plot(
                     [], [], marker="D", color=NAVY, markerfacecolor=NAVY,
                     markeredgewidth=1.1, markersize=7, linestyle="none",
@@ -267,10 +249,18 @@ class PestanaBairstow(PestanaBase):
                     visible=False, zorder=4
                 )[0] for _ in range(2)
             ]
-            self.grafico.leyenda_plano()
+            self.grafico.leyenda_plano(
+                [self._prueba_raices[0], self._estela_factor[0]],
+                ["Raíces del factor", "Trayectoria del factor"],
+            )
         else:
             self._prueba_raices = []
             self._estela_factor = []
+
+        if self._hay_raices_reales_en_pasos():
+            self.grafico.leyenda_real(
+                [self._prueba_reales[0]], ["Raíz real del factor"]
+            )
 
         self._ultimo_por_factor = {}
         self._factor_actual = None
@@ -301,6 +291,17 @@ class PestanaBairstow(PestanaBase):
                 (len(self._pasos_bairstow) - 1, list(range(offset, len(raices))))
             )
 
+    def _hay_raices_reales_en_pasos(self):
+        """True si alguna iteración tiene raíces reales que se puedan animar."""
+        for paso in getattr(self, "_pasos_bairstow", []):
+            for z in paso.get("raices_actuales") or ():
+                try:
+                    if abs(complex(z).imag) <= 1e-9:
+                        return True
+                except (TypeError, ValueError):
+                    continue
+        return False
+
     def _raices_en_cero(self):
         coef = list(self._coef)
         cantidad = 0
@@ -328,6 +329,8 @@ class PestanaBairstow(PestanaBase):
 
         for artista in getattr(self, "_prueba_raices", []):
             artista.set_visible(False)
+        for artista in getattr(self, "_prueba_reales", []):
+            artista.set_visible(False)
         for linea in getattr(self, "_estela_factor", []):
             linea.set_visible(False)
 
@@ -342,9 +345,15 @@ class PestanaBairstow(PestanaBase):
             self.grafico.redibujar()
             return
 
-        for artista, z in zip(self._prueba_raices, self._raices_siguientes(paso)):
+        raices_siguientes = self._raices_siguientes(paso)
+        for artista, z in zip(self._prueba_raices, raices_siguientes):
             artista.set_data([z.real], [z.imag])
             artista.set_visible(True)
+
+        for artista, z in zip(getattr(self, "_prueba_reales", []), raices_siguientes):
+            if abs(z.imag) <= 1e-9:
+                artista.set_data([z.real], [0.0])
+                artista.set_visible(True)
 
         trayectorias = [([], []), ([], [])]
         for anterior in self._pasos_bairstow[: indice + 1]:

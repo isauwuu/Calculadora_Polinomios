@@ -6,11 +6,18 @@ floats con siete decimales, como pide el diseño.
 """
 
 import math
+import re
 from fractions import Fraction
 
 from core.polinomio import Polinomio
 
 DECIMALES = 7
+_SUPERINDICES = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
+
+
+def con_superindices(texto):
+    """Convierte x^2, x^10, etc. en x², x¹⁰ usando Unicode."""
+    return re.sub(r"\^(\d+)", lambda m: m.group(1).translate(_SUPERINDICES), texto)
 
 
 def formatear_float(valor, decimales=DECIMALES):
@@ -50,19 +57,6 @@ def formatear_fraccion(valor):
     return f"{fraccion.numerator}/{fraccion.denominator}"
 
 
-def formatear_numero(valor, decimales=DECIMALES):
-    """Elige fracción exacta o float según el tipo recibido."""
-    if isinstance(valor, Fraction):
-        return formatear_fraccion(valor)
-    if isinstance(valor, complex):
-        return formatear_complejo(valor)
-    if isinstance(valor, bool):
-        return "Sí" if valor else "No"
-    if isinstance(valor, int):
-        return str(valor)
-    return formatear_float(valor, decimales)
-
-
 def formatear_complejo(valor, decimales=DECIMALES):
     """Complejo como 'a + bi'; si la parte imaginaria es ruido, solo 'a'."""
     z = complex(valor)
@@ -82,17 +76,3 @@ def formatear_polinomio(coeficientes):
         return str(Polinomio(list(coeficientes)))
     except (TypeError, ValueError, ZeroDivisionError):
         return "—"
-
-
-def formatear_intervalo(a, b):
-    """Intervalo abierto con extremos exactos."""
-    return f"({formatear_fraccion(a)}, {formatear_fraccion(b)})"
-
-
-def formatear_signo(signo):
-    """Signo de Sturm con texto, no solo color."""
-    return {1: "+", -1: "−", 0: "0"}.get(signo, "?")
-
-
-def formatear_booleano(valor):
-    return "Sí" if valor else "No"

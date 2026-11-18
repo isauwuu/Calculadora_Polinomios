@@ -2,24 +2,16 @@
 
 import base64
 import io
-import re
 import tkinter as tk
 from fractions import Fraction
 
 from core.resultado import Resultado
 from gui import controlador
 from gui.estilo import CARD, GREEN, GREEN_L, MUTED, NAVY, INK
-from gui.formato import formatear_fraccion, formatear_polinomio
+from gui.formato import con_superindices, formatear_fraccion, formatear_polinomio
 from gui.pestanas.base import PestanaBase
-from gui.widgets import Card
 
-_SUPERINDICES = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
 _SUBINDICES = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
-
-
-def con_superindices(texto):
-    """Convierte x^2, x^10, etc. en x², x¹⁰ usando Unicode."""
-    return re.sub(r"\^(\d+)", lambda m: m.group(1).translate(_SUPERINDICES), texto)
 
 
 def subindice(n):
@@ -58,6 +50,7 @@ class PestanaSturm(PestanaBase):
     subtitulo_tabla = ""
     usa_animacion = False
     pie_en_grafico = False
+    tarjeta_polinomio = True
 
     def construir_entrada(self, parent):
         self.v_coef = tk.StringVar(value="4, 0, -5, 0, 1")
@@ -77,29 +70,6 @@ class PestanaSturm(PestanaBase):
             font=self.fuentes.small, bg=CARD, fg=MUTED,
             justify="left", anchor="w", wraplength=300
         ).pack(fill="x", pady=(12, 0))
-
-    def _crear_derecha(self, host):
-        """Tarjeta con el polinomio arriba del gráfico."""
-        self.card_poli = Card(
-            host, r=12, fill="#F4FBF7", outer=CARD,
-            shadow=False, pad=8, autoheight=True,
-        )
-        self.card_poli.pack(fill="x", padx=20, pady=(8, 6))
-
-        self.lbl_polinomio = tk.Label(
-            self.card_poli.inner, text="", font=self.fuentes.h2,
-            bg="#F4FBF7", fg=NAVY, anchor="center", justify="center",
-            wraplength=420,
-        )
-        self.lbl_polinomio.pack(fill="x")
-        self.card_poli.actualizar_alto()
-
-        super()._crear_derecha(host)
-
-    def _mostrar_polinomio(self, coef):
-        texto = con_superindices(formatear_polinomio(coef))
-        self.lbl_polinomio.configure(text=f"P(x) = {texto}")
-        self.card_poli.actualizar_alto()
 
     def _construir_esquema(self):
         """Reemplazamos el layout por uno más compacto sin espacios vacíos."""

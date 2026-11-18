@@ -30,6 +30,9 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 
+# Artefactos intermedios de PyInstaller
+build/
+
 # Archivos temporales
 *.log
 *.tmp

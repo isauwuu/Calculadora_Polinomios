@@ -1,21 +1,12 @@
 """Pestaña 2: raíces enteras y racionales exactas."""
 
-import re
 import tkinter as tk
-from fractions import Fraction
 
 from gui import controlador
-from gui.estilo import CARD, GREEN, RED, MUTED, NAVY, BG, PLOT
-from gui.formato import formatear_fraccion, formatear_polinomio
+from gui.estilo import CARD, GREEN, MUTED, NAVY
+from gui.formato import con_superindices, formatear_fraccion, formatear_polinomio
 from gui.pestanas.base import PestanaBase
 from gui.widgets import Card
-
-_SUPERINDICES = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
-
-
-def con_superindices(texto):
-    """Convierte x^2, x^10, etc. en x², x¹⁰ usando Unicode."""
-    return re.sub(r"\^(\d+)", lambda m: m.group(1).translate(_SUPERINDICES), texto)
 
 
 class PestanaEnterasRacionales(PestanaBase):
@@ -23,6 +14,7 @@ class PestanaEnterasRacionales(PestanaBase):
     subtitulo_tabla = "(raíces y factorización)"
     usa_animacion = False
     pie_en_grafico = False  # <--- Ahora el resultado va al centro
+    tarjeta_polinomio = True
 
     def construir_entrada(self, parent):
         self.v_coef = tk.StringVar(value="3, -11, -6, 44, -24")
@@ -56,29 +48,6 @@ class PestanaEnterasRacionales(PestanaBase):
             anchor="w",
             wraplength=230,
         ).pack(fill="x", pady=(10, 0))
-
-    def _crear_derecha(self, host):
-        """Agrega un recuadro con el polinomio arriba del gráfico."""
-        self.card_poli = Card(
-            host, r=12, fill="#F4FBF7", outer=CARD,
-            shadow=False, pad=8, autoheight=True,
-        )
-        self.card_poli.pack(fill="x", padx=20, pady=(8, 6))
-
-        self.lbl_polinomio = tk.Label(
-            self.card_poli.inner, text="", font=self.fuentes.h2,
-            bg="#F4FBF7", fg=NAVY, anchor="center", justify="center",
-            wraplength=420,
-        )
-        self.lbl_polinomio.pack(fill="x")
-        self.card_poli.actualizar_alto()
-
-        super()._crear_derecha(host)
-
-    def _mostrar_polinomio(self, coef):
-        texto = con_superindices(formatear_polinomio(coef))
-        self.lbl_polinomio.configure(text=f"P(x) = {texto}")
-        self.card_poli.actualizar_alto()
 
     def _construir_esquema(self):
         super()._construir_esquema()

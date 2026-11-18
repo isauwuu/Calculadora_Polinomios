@@ -31,30 +31,6 @@ def evaluar_curva(coeficientes, xs):
     return np.polyval(_coef_desc(coeficientes), xs)
 
 
-def raiz_en_intervalo(coeficientes, a, b, iteraciones=80):
-    """Aproxima por bisección la raíz única de P en (a, b), solo para graficar."""
-    fa = float(evaluar_curva(coeficientes, a))
-    fb = float(evaluar_curva(coeficientes, b))
-    if fa == 0:
-        return a
-    if fb == 0:
-        return b
-    if fa * fb > 0:
-        return None
-    for _ in range(iteraciones):
-        medio = (a + b) / 2
-        fm = float(evaluar_curva(coeficientes, medio))
-        if fm == 0:
-            return medio
-        if fa * fm < 0:
-            b = medio
-            fb = fm
-        else:
-            a = medio
-            fa = fm
-    return (a + b) / 2
-
-
 def rango_x(coeficientes, puntos, pad=0.12):
     """Elige un intervalo horizontal que contenga los puntos importantes."""
     valores = []
@@ -161,6 +137,38 @@ def dibujar_curva(ax, coeficientes, xlim=None, puntos=None, color=PLOT, etiqueta
     # -------------------------------------
 
     return xs, ys
+
+
+_ESTILOS_LEYENDA = (
+    "color",
+    "linestyle",
+    "linewidth",
+    "alpha",
+    "marker",
+    "markersize",
+    "markerfacecolor",
+    "markeredgecolor",
+    "markeredgewidth",
+)
+
+
+def _handle_visible(handle):
+    """Devuelve un proxy visible con el mismo estilo para la leyenda.
+
+    Los artistas de la animación arrancan ocultos a propósito; si se pasan
+    tal cual, matplotlib dibuja el símbolo de la leyenda en blanco.
+    """
+    if handle.get_visible():
+        return handle
+    proxy = Line2D([], [])
+    for atributo in _ESTILOS_LEYENDA:
+        try:
+            valor = getattr(handle, f"get_{atributo}")()
+            getattr(proxy, f"set_{atributo}")(valor)
+        except (AttributeError, TypeError, ValueError):
+            continue
+    proxy.set_visible(True)
+    return proxy
 
 
 def raices_referencia(coeficientes):
@@ -433,6 +441,8 @@ class GraficoBairstow(GraficoSimple):
         self._hover_art2 = None
         self._xlim_base2 = None
         self._ylim_base2 = None
+        self._handles_base_real = []
+        self._labels_base_real = []
         self._handles_base_comp = []
         self._labels_base_comp = []
         self.figura.clear()
@@ -461,6 +471,8 @@ class GraficoBairstow(GraficoSimple):
         self._xlim_base2 = None
         self._ylim_base2 = None
         self.artistas_raices = []
+        self._handles_base_real = []
+        self._labels_base_real = []
         self._handles_base_comp = []
         self._labels_base_comp = []
         self.canvas.draw_idle()
@@ -478,12 +490,34 @@ class GraficoBairstow(GraficoSimple):
             zorder=20,
         )
 
-    def leyenda_plano(self):
+    def leyenda_real(self, extra_handles=(), extra_labels=()):
+        """Leyenda del gráfico real combinando los manuales con los extras."""
+        if self.ax is None:
+            return
+        handles = list(self._handles_base_real)
+        labels = list(self._labels_base_real)
+        for handle, label in zip(extra_handles, extra_labels):
+            if label not in labels:
+                handles.append(_handle_visible(handle))
+                labels.append(label)
+        if not handles:
+            return
+        self.ax.legend(
+            handles, labels,
+            fontsize=9.5, frameon=False, loc="upper left",
+        )
+
+    def leyenda_plano(self, extra_handles=(), extra_labels=()):
         """Leyenda del plano complejo combinando los manuales con los extras."""
         if self.ax2 is None:
             return
         handles = list(self._handles_base_comp)
         labels = list(self._labels_base_comp)
+
+        for handle, label in zip(extra_handles, extra_labels):
+            if label not in labels:
+                handles.append(_handle_visible(handle))
+                labels.append(label)
 
         extras_h, extras_l = self.ax2.get_legend_handles_labels()
         for h, l in zip(extras_h, extras_l):
@@ -521,18 +555,19 @@ class GraficoBairstow(GraficoSimple):
             self.figura.subplots_adjust(left=0.12, right=0.98, top=0.86, bottom=0.15)
 
         xlim = rango_x(coeficientes, reales)
+        self.ax = ax_real
         dibujar_curva(ax_real, coeficientes, xlim, reales, PLOT, "P(x)")
         estilizar(ax_real, "P(x) y raíces reales")
 
         # Handles manuales para el gráfico principal
-        handles_real = [Line2D([0], [0], color=PLOT, lw=2.0)]
-        labels_real = ["P(x)"]
+        self._handles_base_real = [Line2D([0], [0], color=PLOT, lw=2.0)]
+        self._labels_base_real = ["P(x)"]
         if reales:
-            handles_real.append(Line2D([0], [0], marker="o", color=GREEN, markerfacecolor=GREEN,
-                                       markeredgewidth=1.6, markersize=8, linestyle="none"))
-            labels_real.append("Raíces reales")
+            self._handles_base_real.append(Line2D([0], [0], marker="o", color=GREEN, markerfacecolor=GREEN,
+                                                  markeredgewidth=1.6, markersize=8, linestyle="none"))
+            self._labels_base_real.append("Raíces reales")
 
-        ax_real.legend(handles_real, labels_real, fontsize=9.5, frameon=False, loc="upper left")
+        self.leyenda_real()
 
         if ax_comp is not None:
             estilizar(ax_comp, "Plano complejo")
@@ -569,7 +604,6 @@ class GraficoBairstow(GraficoSimple):
             self._handles_base_comp = []
             self._labels_base_comp = []
 
-        self.ax = ax_real
         self._coef_actual = list(coeficientes)
         self._puntos_hover = []
         self._hover_art1 = self._anotacion(ax_real)

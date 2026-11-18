@@ -1,21 +1,12 @@
 """Pestaña 3: cotas superior e inferior de las raíces reales."""
 
-import re
 import tkinter as tk
-from fractions import Fraction
 
 from gui import controlador
-from gui.estilo import AMBER_L, CARD, GREEN_L, MUTED, NAVY, GREEN, BG
-from gui.formato import formatear_fraccion, formatear_float, formatear_polinomio
+from gui.estilo import AMBER_L, CARD, GREEN_L, MUTED, NAVY, GREEN
+from gui.formato import formatear_fraccion
 from gui.pestanas.base import PestanaBase
 from gui.widgets import Card
-
-_SUPERINDICES = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
-
-
-def con_superindices(texto):
-    """Convierte x^2, x^10, etc. en x², x¹⁰ usando Unicode."""
-    return re.sub(r"\^(\d+)", lambda m: m.group(1).translate(_SUPERINDICES), texto)
 
 
 class PestanaCotas(PestanaBase):
@@ -23,6 +14,7 @@ class PestanaCotas(PestanaBase):
     subtitulo_tabla = "(valores exactos)"
     usa_animacion = False
     pie_en_grafico = False
+    tarjeta_polinomio = True
 
     METODOS = (
         ("lagrange", "Lagrange"),
@@ -53,29 +45,6 @@ class PestanaCotas(PestanaBase):
             wraplength=230,
         ).pack(fill="x", pady=(10, 0))
 
-    def _crear_derecha(self, host):
-        """Tarjeta con el polinomio arriba del gráfico."""
-        self.card_poli = Card(
-            host, r=12, fill="#F4FBF7", outer=CARD,
-            shadow=False, pad=8, autoheight=True,
-        )
-        self.card_poli.pack(fill="x", padx=20, pady=(8, 6))
-
-        self.lbl_polinomio = tk.Label(
-            self.card_poli.inner, text="", font=self.fuentes.h2,
-            bg="#F4FBF7", fg=NAVY, anchor="center", justify="center",
-            wraplength=420,
-        )
-        self.lbl_polinomio.pack(fill="x")
-        self.card_poli.actualizar_alto()
-
-        super()._crear_derecha(host)
-
-    def _mostrar_polinomio(self, coef):
-        texto = con_superindices(formatear_polinomio(coef))
-        self.lbl_polinomio.configure(text=f"P(x) = {texto}")
-        self.card_poli.actualizar_alto()
-
     def _construir_esquema(self):
         super()._construir_esquema()
         if self.usa_tabla:
@@ -88,19 +57,6 @@ class PestanaCotas(PestanaBase):
         self._texto_coef = self.v_coef.get()
         self._coef = controlador.coeficientes_float(self._texto_coef)
         return controlador.cotas(self._texto_coef)
-
-    def _formatear_cota(self, valor):
-        if valor == 0:
-            return "0"
-        texto_frac = formatear_fraccion(valor)
-        try:
-            if isinstance(valor, Fraction) and valor.denominator != 1:
-                return f"{texto_frac} (≈{formatear_float(float(valor), 2)})"
-            elif isinstance(valor, float):
-                return formatear_float(valor, 2)
-            return texto_frac
-        except Exception:
-            return texto_frac
 
     def _mostrar_resultado(self, resultado):
         valor = resultado.valor

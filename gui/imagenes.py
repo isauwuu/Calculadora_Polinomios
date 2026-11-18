@@ -9,7 +9,7 @@ from functools import lru_cache
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageTk
 
-from gui.estilo import BG, CARD, GREEN, GREEN_B, LINE, NAVY
+from gui.estilo import BG, GREEN, GREEN_B, LINE, NAVY
 
 SS = 3  # supersampling para bordes suaves
 

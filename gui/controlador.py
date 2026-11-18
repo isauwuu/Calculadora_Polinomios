@@ -6,7 +6,6 @@ que una pestaña pueda avisar "Método aún no disponible" sin romper la ventana
 """
 
 import importlib
-import cmath
 import math
 from fractions import Fraction
 
@@ -168,33 +167,26 @@ def _texto(valor):
     return str(valor)
 
 
-def tabla_ruffini(polinomio, alpha):
-    """Arma la tabla clásica de Ruffini de P dividido por (x - α).
+def _tabla_horner(p, alpha, b):
+    """Arma la tabla de Ruffini a partir de los ``b`` que calcula Horner.
 
-    ``polinomio`` puede ser un ``Polinomio``, el texto de coeficientes o una
-    lista de coeficientes de MAYOR a menor grado (como se escribe en la GUI).
-    Devuelve las tres filas numéricas (``fila1``, ``fila2`` y ``fila3``) y el
-    cociente/resto. La fila 1 son los coeficientes, la fila 2 los productos
-    α·b_i (la primera celda es None) y la fila 3 las sumas.
+    ``b[0]`` es el resto y ``b[1:]`` el cociente (coeficientes de menor a
+    mayor grado). El cálculo lo hace ``metodos.evaluacion``; acá solo se
+    preparan las filas que se dibujan.
     """
-    p = _como_polinomio(polinomio)
-    a = Fraction(alpha)
     fila1 = list(reversed(p.coef))
-    fila2 = [None] * len(fila1)
-    fila3 = [Fraction(0)] * len(fila1)
-    fila3[0] = fila1[0]
+    fila3 = list(reversed(b))
+    fila2 = [None] + [alpha * valor for valor in fila3[:-1]]
 
     calculos = ["coeficiente principal"]
     for j in range(1, len(fila1)):
-        fila2[j] = a * fila3[j - 1]
-        fila3[j] = fila1[j] + fila2[j]
         calculos.append(
-            f"{_texto(a)}·{_texto(fila3[j - 1])} + {_texto(fila1[j])} = "
+            f"{_texto(alpha)}·{_texto(fila3[j - 1])} + {_texto(fila1[j])} = "
             f"{_texto(fila3[j])}"
         )
 
     return {
-        "alpha": a,
+        "alpha": alpha,
         "fila1": fila1,
         "fila2": fila2,
         "productos": fila2,
@@ -206,45 +198,64 @@ def tabla_ruffini(polinomio, alpha):
     }
 
 
+def tabla_ruffini(polinomio, alpha):
+    """Arma la tabla clásica de Ruffini de P dividido por (x - α).
+
+    ``polinomio`` puede ser un ``Polinomio``, el texto de coeficientes o una
+    lista de coeficientes de MAYOR a menor grado (como se escribe en la GUI).
+    Devuelve las tres filas numéricas (``fila1``, ``fila2`` y ``fila3``) y el
+    cociente/resto. La fila 1 son los coeficientes, la fila 2 los productos
+    α·b_i (la primera celda es None) y la fila 3 las sumas.
+    """
+    p = _como_polinomio(polinomio)
+    a = Fraction(alpha)
+    horner = _metodo("metodos.evaluacion", "horner_fraction")
+    return _tabla_horner(p, a, horner(p, a).pasos[0]["b"])
+
+
 def tabla_ruffini_doble(polinomio, alpha):
     """Dos esquemas de Ruffini apilados: P(α) y P'(α)."""
     p = _como_polinomio(polinomio)
-    primera = tabla_ruffini(p, alpha)
+    a = Fraction(alpha)
+    horner_doble = _metodo("metodos.evaluacion", "horner_doble_fraction")
+    resultado = horner_doble(p, a)
+    paso = resultado.pasos[0]
+    primera = _tabla_horner(p, a, paso["b"])
+
     if p.grado == 0:
         return {
             "primera": primera,
             "segunda": None,
-            "p_alpha": primera["resto"],
+            "p_alpha": resultado.valor[0],
             "dp_alpha": Fraction(0),
         }
 
     # El cociente de la primera pasada es el polinomio que se evalúa de nuevo.
-    cociente = Polinomio(list(reversed(primera["cociente"])))
-    segunda = tabla_ruffini(cociente, alpha)
+    segunda = _tabla_horner(Polinomio(paso["b"][1:]), a, paso["c"])
     return {
         "primera": primera,
         "segunda": segunda,
-        "p_alpha": primera["resto"],
-        "dp_alpha": segunda["resto"],
+        "p_alpha": resultado.valor[0],
+        "dp_alpha": resultado.valor[1],
     }
 
 
 def tabla_ruffini_cuadratica(polinomio, a, b):
     """Esquema de Horner cuadrático para el divisor x² + a·x + b.
 
-    Sigue exactamente las fórmulas de ``metodos.division.horner_cuadratico``:
+    Las fórmulas las resuelve ``metodos.division.horner_cuadratico``:
         c[n] = coef[n]
         c[n-1] = coef[n-1] - a·c[n]
         c[i] = coef[i] - a·c[i+1] - b·c[i+2]
         c[0] = coef[0] - b·c[2]
-    El cociente es c[2:] y el resto c[1]·x + c[0]. Se agregan las dos filas
-    de productos para poder dibujar el esquema del apunte.
+    El cociente es c[2:] y el resto c[1]·x + c[0]. Acá solo se agregan las
+    filas de productos para poder dibujar el esquema del apunte.
     """
     p = _como_polinomio(polinomio)
     a = Fraction(a)
     b = Fraction(b)
     n = p.grado
-    coef = p.coef
+    fila1 = list(reversed(p.coef))
 
     if n < 2:
         return {
@@ -252,25 +263,20 @@ def tabla_ruffini_cuadratica(polinomio, a, b):
             "grado_menor": True,
             "a": a,
             "b": b,
-            "fila1": list(reversed(coef)),
-            "fila2": [None] * len(coef),
-            "fila3": [None] * len(coef),
-            "productos_a": [None] * len(coef),
-            "productos_b": [None] * len(coef),
-            "suma": [None] * len(coef),
+            "fila1": fila1,
+            "fila2": [None] * len(fila1),
+            "fila3": [None] * len(fila1),
+            "productos_a": [None] * len(fila1),
+            "productos_b": [None] * len(fila1),
+            "suma": [None] * len(fila1),
             "cociente": [],
-            "resto": list(reversed(coef)),
+            "resto": fila1,
             "calculos": ["El grado de P es menor que el del divisor."],
         }
 
-    c = [Fraction(0)] * (n + 1)
-    c[n] = coef[n]
-    c[n - 1] = coef[n - 1] - a * c[n]
-    for i in range(n - 2, 0, -1):
-        c[i] = coef[i] - a * c[i + 1] - b * c[i + 2]
-    c[0] = coef[0] - b * c[2]
+    horner = _metodo("metodos.division", "horner_cuadratico")
+    c = horner(p, a, b).pasos[0]["c"]
 
-    fila1 = list(reversed(coef))
     suma = list(reversed(c))
     productos_a = [None] * (n + 1)
     productos_b = [None] * (n + 1)
@@ -321,7 +327,8 @@ def tabla_ruffini_cuadratica_normalizada(polinomio, a, b, c):
     """Ruffini cuadrático para ax² + bx + c, normalizando por a.
 
     P / (a·x² + b·x + c) = (1/a) · P / (x² + (b/a)·x + c/a).
-    Se dibuja el esquema del divisor mónico y se divide el cociente por a.
+    Se dibuja el esquema del divisor mónico y la división del cociente por a
+    la resuelve ``metodos.division.dividir_por_cuadratico``.
     """
     p = _como_polinomio(polinomio)
     a = Fraction(a)
@@ -332,21 +339,36 @@ def tabla_ruffini_cuadratica_normalizada(polinomio, a, b, c):
     base = tabla_ruffini_cuadratica(p, b / a, c / a)
     base["normalizada"] = a
     base["cociente_sin_normalizar"] = list(base["cociente"])
-    base["cociente"] = [coef / a for coef in base["cociente"]]
+
+    if a != 1 and not base["grado_menor"]:
+        dividir_cuadratico = _metodo("metodos.division", "dividir_por_cuadratico")
+        cociente, _ = dividir_cuadratico(p, a, b, c).valor
+        base["cociente"] = list(reversed(cociente.coef))
+
     return base
 
 
 def tabla_ruffini_ax_mas_b(polinomio, a, b):
-    """Ruffini para ax + b: α = −b/a y el cociente se divide por a."""
+    """Ruffini para ax + b: α = −b/a y el cociente se divide por a.
+
+    La división completa la resuelve ``metodos.division.dividir_por_ax_mas_b``;
+    acá se arma el esquema mónico con las filas de Horner que devuelve.
+    """
     p = _como_polinomio(polinomio)
     a = Fraction(a)
     if a == 0:
         raise EntradaInvalida("El coeficiente 'a' de ax + b no puede ser 0.")
     b = Fraction(b)
-    base = tabla_ruffini(p, -b / a)
+    dividir_ax_mas_b = _metodo("metodos.division", "dividir_por_ax_mas_b")
+    resultado = dividir_ax_mas_b(p, a, b)
+    paso = resultado.pasos[0]
+    cociente, resto = resultado.valor
+    base = _tabla_horner(p, paso["alpha"], paso["b"])
     base["normalizada"] = a
     base["cociente_sin_normalizar"] = list(base["cociente"])
-    base["cociente"] = [coef / a for coef in base["cociente"]]
+    if p.grado >= 1:
+        base["cociente"] = list(reversed(cociente.coef))
+    base["resto"] = resto
     return base
 
 
@@ -557,9 +579,9 @@ def esquema_division(texto, tipo_divisor, parametros):
         a, b, c = _parametros_racionales(parametros, 3, ("a", "b", "c"))
         datos = tabla_ruffini_cuadratica_normalizada(p, a, b, c)
         nota = (
-            f"Divisor normalizado: x² + {_texto(Fraction(b, 1) / Fraction(a))}·x + "
-            f"{_texto(Fraction(c, 1) / Fraction(a))}. "
-            f"El cociente del esquema se divide por a = {_texto(Fraction(a))}."
+            f"Divisor normalizado: x² + {_texto(datos['a'])}·x + "
+            f"{_texto(datos['b'])}. "
+            f"El cociente del esquema se divide por a = {_texto(datos['normalizada'])}."
         )
         seccion = _seccion_ruffini(
             datos,
@@ -601,7 +623,7 @@ def esquema_division(texto, tipo_divisor, parametros):
     if tipo.startswith("a"):
         a, b = _parametros_racionales(parametros, 2, ("a", "b"))
         datos = tabla_ruffini_ax_mas_b(p, a, b)
-        alpha = -Fraction(b) / Fraction(a)
+        alpha = datos["alpha"]
         seccion = _seccion_ruffini(
             datos,
             f"α = {_texto(alpha)}",
@@ -648,21 +670,23 @@ def factorizar_raices(texto, raices):
 
     Devuelve ``{"factores": [Fraction], "residual": Polinomio}`` donde
     ``factores`` repite cada raíz según su multiplicidad y ``residual`` es lo
-    que queda cuando ya no se puede dividir exactamente. La GUI solo arma el
-    texto de la factorización; la cuenta la hace esta capa.
+    que queda cuando ya no se puede dividir exactamente. La multiplicidad la
+    calcula ``metodos.raices`` y cada división usa
+    ``metodos.division.dividir_por_x_menos_b``.
     """
     p = leer_polinomio(texto)
     dividir_por_raiz = _metodo("metodos.division", "dividir_por_x_menos_b")
+    multiplicidad = _metodo("metodos.raices", "_multiplicidad")
     factores = []
     q = p
     for raiz in raices:
         r = Fraction(raiz)
-        while q.grado >= 1:
-            cociente, resto = dividir_por_raiz(q, r).valor
-            if resto != 0:
-                break
-            factores.append(r)
-            q = cociente
+        veces = multiplicidad(q, r)
+        if not veces:
+            continue
+        factores.extend([r] * veces)
+        for _ in range(veces):
+            q = dividir_por_raiz(q, r).valor[0]
     return {"factores": factores, "residual": q}
 
 
@@ -850,27 +874,15 @@ def sturm(texto, a_texto, b_texto, simplificada=False):
 def biseccion_sturm(texto, a_texto, b_texto, simplificada=False):
     """Estados de la subdivisión de Sturm para animar la pestaña 5.
 
-    No es un método nuevo: usa ``contar_raices`` y elige puntos de corte que
-    no sean raíz, igual que ``separar_raices``. Devuelve una lista de estados;
-    cada estado es la frontera de intervalos con su cantidad de raíces.
+    No es un méodo nuevo: usa ``contar_raices`` y ``_punto_no_raiz`` de
+    ``metodos.sturm``, igual que ``separar_raices``. Devuelve una lista de
+    estados; cada estado es la frontera de intervalos con sus raíces.
     """
     p = leer_polinomio(texto)
     a = parsear_racional(a_texto, "el extremo a")
     b = parsear_racional(b_texto, "el extremo b")
     contar = _metodo("metodos.sturm", "contar_raices")
-    evaluar = _metodo("metodos.evaluacion", "horner_fraction")
-
-    def valor_en(x):
-        return evaluar(p, x).valor
-
-    def punto_no_raiz(x, y):
-        for nivel in range(1, 21):
-            denominador = 2 ** nivel
-            for numerador in range(1, denominador, 2):
-                punto = x + (y - x) * Fraction(numerador, denominador)
-                if valor_en(punto) != 0:
-                    return punto
-        raise EntradaInvalida("No se encontró un punto de corte que no sea raíz.")
+    punto_no_raiz = _metodo("metodos.sturm", "_punto_no_raiz")
 
     def cantidad(x, y):
         return contar(p, x, y, simplificada).valor
@@ -892,7 +904,7 @@ def biseccion_sturm(texto, a_texto, b_texto, simplificada=False):
         if pendiente is None:
             break
         x, y, _cantidad, profundidad = frontera[pendiente]
-        punto = punto_no_raiz(x, y)
+        punto = punto_no_raiz(p, x, y)
         izquierda = cantidad(x, punto)
         derecha = _cantidad - izquierda
         hijos = []
@@ -958,12 +970,12 @@ def tabla_signos_sturm(texto, puntos_texto, simplificada=False):
 def raices_del_factor(r, s):
     """Raíces de x² − r·x − s, para dibujar el movimiento de (r, s).
 
-    Es solo presentación: usa la misma fórmula que el núcleo, con floats.
+    La fórmula vive en ``metodos.bairstow._raices_factor``; acá solo se
+    adaptan los valores para la animación.
     """
     try:
-        discriminante = complex(float(r) ** 2 + 4.0 * float(s), 0.0)
-        raiz = cmath.sqrt(discriminante)
-        return [complex((float(r) + raiz) / 2.0), complex((float(r) - raiz) / 2.0)]
+        raices_factor = _metodo("metodos.bairstow", "_raices_factor")
+        return raices_factor(float(r), float(s))
     except (TypeError, ValueError, OverflowError):
         return []
 

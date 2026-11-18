@@ -6,6 +6,7 @@ import traceback
 
 from core.errores import EntradaInvalida, ErrorNumerico, PolinomioInvalido
 from gui.estilo import BG, CARD, GREEN, INK, NAVY
+from gui.formato import con_superindices, formatear_polinomio
 from gui.graficos import GraficoSimple
 from gui.widgets import (
     Banner,
@@ -34,6 +35,7 @@ class PestanaBase(tk.Frame):
     usa_tabla = True
     usa_animacion = True
     pie_en_grafico = False
+    tarjeta_polinomio = False
 
     def __init__(self, master, app, grafico_clase=None):
         super().__init__(master, bg=BG)
@@ -166,9 +168,32 @@ class PestanaBase(tk.Frame):
 
     def _crear_derecha(self, host):
         """Crea el contenido de la tarjeta derecha (gráfico por defecto)."""
+        if self.tarjeta_polinomio:
+            self._crear_tarjeta_polinomio(host)
         clase = self.grafico_clase
         self.grafico = clase(host, self)
         self.grafico.pack(fill="both", expand=True)
+
+    def _crear_tarjeta_polinomio(self, host):
+        """Recuadro superior con el polinomio que se está analizando."""
+        self.card_poli = Card(
+            host, r=12, fill="#F4FBF7", outer=CARD,
+            shadow=False, pad=8, autoheight=True,
+        )
+        self.card_poli.pack(fill="x", padx=20, pady=(8, 6))
+
+        self.lbl_polinomio = tk.Label(
+            self.card_poli.inner, text="", font=self.fuentes.h2,
+            bg="#F4FBF7", fg=NAVY, anchor="center", justify="center",
+            wraplength=420,
+        )
+        self.lbl_polinomio.pack(fill="x")
+        self.card_poli.actualizar_alto()
+
+    def _mostrar_polinomio(self, coef):
+        texto = con_superindices(formatear_polinomio(coef))
+        self.lbl_polinomio.configure(text=f"P(x) = {texto}")
+        self.card_poli.actualizar_alto()
 
     def _scroll_centro_yview(self, first, last):
         self.scroll_centro.set(first, last)
@@ -540,9 +565,6 @@ class PestanaBase(tk.Frame):
 
         _tick()
 
-    def _paso_animacion(self, indice):
-        self._aplicar_paso(indice)
-
     def _aplicar_paso(self, indice):
         """Comportamiento común: resaltar la fila del paso en la tabla."""
         if self.tabla is None:
@@ -555,14 +577,11 @@ class PestanaBase(tk.Frame):
     def _elegir_paso(self, indice):
         pass
 
-    def _limpiar_derecha(self, mensaje):
+    def _limpiar_grafico(self, mensaje):
         """Limpia el gráfico o la tabla de Ruffini, según la pestaña."""
         contenido = getattr(self, "grafico", None) or getattr(self, "ruffini", None)
         if contenido is not None:
             contenido.limpiar(mensaje)
-
-    def _limpiar_grafico(self, mensaje):
-        self._limpiar_derecha(mensaje)
 
     def _redibujar_derecha(self):
         contenido = getattr(self, "grafico", None) or getattr(self, "ruffini", None)
@@ -570,7 +589,7 @@ class PestanaBase(tk.Frame):
             contenido.redibujar()
 
     def _grafico_inicial(self):
-        self._limpiar_derecha("Ingresá los datos y presioná Calcular.")
+        self._limpiar_grafico("Ingresá los datos y presioná Calcular.")
 
     def _estado(self, tipo, mensaje):
         self.app.estado(tipo, mensaje)
