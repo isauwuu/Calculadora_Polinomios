@@ -7,7 +7,7 @@ Aplicación de escritorio para el cálculo, análisis y visualización de raíce
 El proyecto incluye una versión compilada que no requiere tener Python instalado. Para abrirla, ejecutá el archivo ubicado en:
 
 ```text
-dist/RaicesDePolinomios/RaicesDePolinomios.exe
+dist/Calculadora Polinomios.exe
 ```
 
 ## Ejecución desde el código fuente
@@ -25,13 +25,24 @@ pip install matplotlib pytest
 
 3. Iniciar la aplicación:
 ```bash
-python gui/main.py
+python main.py
 ```
 
 4. Correr las pruebas unitarias:
 ```bash
 pytest
 ```
+
+## Generar el ejecutable
+
+```bash
+pip install pyinstaller
+pyinstaller --clean --noconfirm "Calculadora Polinomios.spec"
+```
+
+El ejecutable queda en `dist/Calculadora Polinomios.exe`. El `.spec` declara los
+módulos de `metodos/` como *hidden imports* porque el controlador los carga
+dinámicamente con `importlib`.
 
 ## Funcionalidades
 

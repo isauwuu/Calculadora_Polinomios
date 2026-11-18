@@ -1,12 +1,24 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_submodules
 
+# ``gui.controlador`` importa los métodos con importlib.import_module, por lo
+# que PyInstaller no puede descubrirlos solo. Hay que incluirlos explícitamente
+# o el .exe abre pero responde "Método aún no disponible".
+hiddenimports = (
+    collect_submodules("core")
+    + collect_submodules("metodos")
+    + collect_submodules("gui")
+    + collect_submodules("gui.pestanas")
+)
+
+datas = [("mi_icono.ico", ".")]
 
 a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[],
-    hiddenimports=[],
+    datas=datas,
+    hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
