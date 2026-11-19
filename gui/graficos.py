@@ -11,7 +11,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from matplotlib.ticker import MaxNLocator
-
+from matplotlib.patches import Arc, Circle
 from gui.estilo import CARD, GREEN, INK, LINE, MUTED, ORANGE, PLOT
 from gui.formato import formatear_complejo, formatear_float
 
@@ -428,6 +428,54 @@ class GraficoSimple(tk.Frame):
         except tk.TclError:
             pass
 
+def _grilla_polar(ax, limite):
+    """Circunferencias |z| = k y rayos cada 30° como referencia de módulo y ángulo."""
+    paso = max(1, round(limite / 4))
+    for r in np.arange(paso, limite * 1.5, paso):
+        ax.add_patch(Circle((0, 0), r, fill=False, ec=LINE, lw=0.6, ls="--", alpha=0.9, zorder=0))
+        ax.text(r * 0.7071, r * 0.7071, f"{r:g}", fontsize=7, color=MUTED,
+                ha="left", va="bottom", zorder=1, clip_on=True)
+    for grados in range(0, 360, 30):
+        a = math.radians(grados)
+        ax.plot([0, limite * 1.5 * math.cos(a)], [0, limite * 1.5 * math.sin(a)],
+                color=LINE, lw=0.5, alpha=0.8, zorder=0)
+
+
+def _decorar_raiz_compleja(ax, z, visible=True):
+    """Segmento al origen, arco del ángulo, circunferencia del módulo y etiqueta polar."""
+    r = abs(z)
+    th = math.degrees(math.atan2(z.imag, z.real))
+    arte = []
+
+    arte.append(ax.plot([0, z.real], [0, z.imag], color=ORANGE, lw=1.0, alpha=0.75,
+                        zorder=3, visible=visible)[0])
+
+    circ = Circle((0, 0), r, fill=False, ec=ORANGE, lw=0.8, ls=":", alpha=0.55,
+                  zorder=2, visible=visible)
+    ax.add_patch(circ)
+    arte.append(circ)
+
+    ra = min(0.4 * r, 1.0)
+    arco = Arc((0, 0), 2 * ra, 2 * ra, theta1=min(0, th), theta2=max(0, th),
+               color=ORANGE, lw=1.0, zorder=3, visible=visible)
+    ax.add_patch(arco)
+    arte.append(arco)
+
+    # Línea hacia el conjugado (solo desde el de arriba, para no duplicar)
+    if z.imag > 0:
+        arte.append(ax.plot([z.real, z.real], [z.imag, -z.imag], color=ORANGE, lw=0.8,
+                            ls="--", alpha=0.5, zorder=2, visible=visible)[0])
+
+    desplazamiento = (6, 6) if z.imag >= 0 else (6, -22)
+    texto = ax.annotate(
+        f"{formatear_complejo(z)}\nr={r:.2f} ∠{th:.1f}°",
+        xy=(z.real, z.imag), xytext=desplazamiento, textcoords="offset points",
+        fontsize=7.5, color=INK, zorder=9, visible=visible,
+        bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.8),
+    )
+    arte.append(texto)
+    return arte
+
 
 class GraficoBairstow(GraficoSimple):
     """Figura con P(x) en la recta real y, al costado, el plano complejo."""
@@ -554,6 +602,7 @@ class GraficoBairstow(GraficoSimple):
             ax_comp = None
             self.figura.subplots_adjust(left=0.12, right=0.98, top=0.86, bottom=0.15)
 
+        # ---------------- Gráfico real (sin cambios) ----------------
         xlim = rango_x(coeficientes, reales)
         self.ax = ax_real
         dibujar_curva(ax_real, coeficientes, xlim, reales, PLOT, "P(x)")
@@ -569,22 +618,25 @@ class GraficoBairstow(GraficoSimple):
 
         self.leyenda_real()
 
+        # ---------------- Plano complejo (con grilla polar) ----------------
         if ax_comp is not None:
             estilizar(ax_comp, "Plano complejo")
             ax_comp.axhline(0, color=INK, lw=0.6, zorder=1)
             ax_comp.axvline(0, color=INK, lw=0.6, zorder=1)
 
-            valores = [abs(z.real) for z in raices] + [abs(z.imag) for z in raices]
-            limite = max([1.5] + [v * 1.25 + 0.5 for v in valores])
+            # Límite según el módulo de las raíces, así entra toda la circunferencia
+            limite = max([1.5] + [abs(z) * 1.15 + 0.5 for z in raices])
             ax_comp.set_xlim(-limite, limite)
             ax_comp.set_ylim(-limite, limite)
+            _grilla_polar(ax_comp, limite)
+
             ax_comp.set_aspect("equal", adjustable="box")
             ax_comp.set_anchor("N")
             ax_comp.xaxis.set_major_locator(MaxNLocator(nbins=5))
             ax_comp.yaxis.set_major_locator(MaxNLocator(nbins=5))
             ax_comp.tick_params(labelsize=9)
-            ax_comp.set_xlabel("Re", fontsize=9, color=MUTED, labelpad=2)
-            ax_comp.set_ylabel("Im", fontsize=9, color=MUTED, labelpad=4, rotation=0)
+            ax_comp.set_xlabel("Re(z)", fontsize=9, color=MUTED, labelpad=2)
+            ax_comp.set_ylabel("Im(z)", fontsize=9, color=MUTED, labelpad=4, rotation=0)
             self.ax2 = ax_comp
             self._hover_art2 = self._anotacion(ax_comp)
 
@@ -640,7 +692,13 @@ class GraficoBairstow(GraficoSimple):
                         visible=mostrar, zorder=5,
                     )[0]
                     artistas.append(linea_comp)
-                    self._puntos_hover.append((self.ax2, z.real, z.imag, "Raíz compleja", linea_comp))
+                    # Segmento, arco, circunferencia, conjugado y etiqueta polar
+                    artistas.extend(_decorar_raiz_compleja(self.ax2, z, visible=mostrar))
+                    etiqueta = (
+                        f"|z|={abs(z):.3g} "
+                        f"∠{math.degrees(math.atan2(z.imag, z.real)):.1f}°"
+                    )
+                    self._puntos_hover.append((self.ax2, z.real, z.imag, etiqueta, linea_comp))
             self.artistas_raices.append(artistas)
 
         self.leyenda_plano()
